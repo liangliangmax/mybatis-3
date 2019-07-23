@@ -231,14 +231,17 @@ public class XPathParser {
     try {
       DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
       factory.setValidating(validation);
-
+      //设置由本工厂创建的解析器是否支持XML命名空间 TODO 什么是XML命名空间
       factory.setNamespaceAware(false);
       factory.setIgnoringComments(true);
       factory.setIgnoringElementContentWhitespace(false);
+      //设置是否将CDATA节点转换为Text节点
       factory.setCoalescing(false);
+      //设置是否展开实体引用节点，这里应该是sql片段引用的关键
       factory.setExpandEntityReferences(true);
 
       DocumentBuilder builder = factory.newDocumentBuilder();
+      //设置解析mybatis xml文档节点的解析器,也就是上面的XMLMapperEntityResolver
       builder.setEntityResolver(entityResolver);
       builder.setErrorHandler(new ErrorHandler() {
         @Override

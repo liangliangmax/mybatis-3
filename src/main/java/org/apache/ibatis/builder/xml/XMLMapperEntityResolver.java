@@ -42,6 +42,7 @@ public class XMLMapperEntityResolver implements EntityResolver {
 
   /**
    * Converts a public DTD into a local one.
+   * 将公共的DTD转换为本地模式
    *
    * @param publicId The public id that is what comes after "PUBLIC"
    * @param systemId The system id that is what comes after the public id.

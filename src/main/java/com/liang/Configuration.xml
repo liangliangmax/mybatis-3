@@ -13,7 +13,15 @@
       </dataSource>
     </environment>
   </environments>
+
+
+  <!--<typeAliases>-->
+    <!--&lt;!&ndash;存在的意义仅在于用来减少类完全限定名的冗余。&ndash;&gt;-->
+    <!--<typeAlias alias="User" type="com.liang.User" />-->
+  <!--</typeAliases>-->
+
   <mappers>
     <mapper resource="com/liang/mapper/UserMapper.xml"/>
   </mappers>
+
 </configuration>

@@ -1,0 +1,12 @@
+Application.main
+    --> reader = Resources.getResourceAsReader("com/liang/Configuration.xml")
+    --> new SqlSessionFactoryBuilder().build(reader)
+        -->
+
+
+
+    --> SqlSession sqlSession = sqlSessionFactory.openSession();
+
+    --> List<User> list = sqlSession.selectList("com.liang.UserMapper.getUsers");
+
+    --> sqlSession.close();
