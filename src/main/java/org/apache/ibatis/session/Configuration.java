@@ -97,6 +97,22 @@ import org.apache.ibatis.type.TypeHandlerRegistry;
 
 /**
  * @author Clinton Begin
+ *
+ * mybatis中所有环境配置、resultMap集合、sql语句集合、插件列表、缓存、加载的xml列表、类型别名、类型处理器等全部都维护在Configuration中。
+ * Configuration中包含了一个内部静态类StrictMap，它继承于HashMap，对HashMap的装饰在于增加了put时防重复的处理，get时取不到值时候的异常处理，
+ * 这样核心应用层就不需要额外关心各种对象异常处理,简化应用层逻辑。
+ *
+ * 从设计上来说，我们可以说Configuration并不是一个thin类(也就是仅包含了属性以及getter/setter)，而是一个rich类，
+ * 它对部分逻辑进行了封装便于用户直接使用,而不是让用户各自散落处理，比如addResultMap方法和getMappedStatement方法等等。
+ *
+ *
+ * Configuration是mybatis所有配置以及mapper文件的元数据容器。
+ * 无论是解析mapper文件还是运行时执行SQL语句，
+ * 都需要依赖与mybatis的环境和配置信息，比如databaseId、类型别名等。
+ * mybatis实现将所有这些信息封装到Configuration中并提供了一系列便利的接口方便各主要的调用方使用，
+ * 这样就避免了各种配置和元数据信息到处散落的凌乱。
+ *
+ * http://www.mybatis.org/mybatis-3/configuration.html
  */
 public class Configuration {
 
@@ -189,6 +205,7 @@ public class Configuration {
   protected final TypeHandlerRegistry typeHandlerRegistry = new TypeHandlerRegistry();
 
   // 类型注册器, 用于在执行sql语句的出入参映射以及mybatis-config文件里的各种配置比如<transactionManager type="JDBC"/><dataSource type="POOLED">时使用简写, 后面会详细解释
+  //所有我们在mybatis-config和mapper文件中使用的类似int/string/JDBC/POOLED等字面常量最终解析为具体的java类型都是在typeAliasRegistry构造器和Configuration构造器执行期间初始化的
   protected final TypeAliasRegistry typeAliasRegistry = new TypeAliasRegistry();
   protected final LanguageDriverRegistry languageRegistry = new LanguageDriverRegistry();
 
@@ -219,6 +236,7 @@ public class Configuration {
     this();
     this.environment = environment;
   }
+
 
   public Configuration() {
     // 内置别名注册
@@ -701,7 +719,9 @@ public class Configuration {
 
   public void addResultMap(ResultMap rm) {
     resultMaps.put(rm.getId(), rm);
+    // 检查本resultMap内的鉴别器有没有嵌套resultMap
     checkLocallyForDiscriminatedNestedResultMaps(rm);
+    // 检查所有resultMap的鉴别器有没有嵌套resultMap
     checkGloballyForDiscriminatedNestedResultMaps(rm);
   }
 

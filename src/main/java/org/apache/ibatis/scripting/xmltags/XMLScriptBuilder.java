@@ -63,9 +63,17 @@ public class XMLScriptBuilder extends BaseBuilder {
     nodeHandlerMap.put("bind", new BindHandler());
   }
 
+  /**
+   * 因为给DynamicContext()构造器传递的parameterObject为空,所以没有参数，也不需要反射，反之就通过反射将object转为map。
+   * 因为rootSqlNode是StaticTextSqlNode类型，所以getSql就直接返回原文本，随后调用第二个构造器，
+   * 首先创建一个SqlSourceBuilder实例，然后调用其parse()方法，
+   * 其中ParameterMappingTokenHandler符号处理器的目的是把sql参数解析出来，
+   */
   public SqlSource parseScriptNode() {
+    //// 解析动态标签
     MixedSqlNode rootSqlNode = parseDynamicTags(context);
     SqlSource sqlSource;
+    //SqlSource是XML文件或者注解方法中映射语句的实现时表示，通过SqlSourceBuilder.parse()方法创建，
     if (isDynamic) {
       sqlSource = new DynamicSqlSource(configuration, rootSqlNode);
     } else {
@@ -74,6 +82,17 @@ public class XMLScriptBuilder extends BaseBuilder {
     return sqlSource;
   }
 
+  /**
+   * SqlNode接口主要用来处理CRUD节点下的各类动态标签比如、，对每个动态标签，mybatis都提供了对应的SqlNode实现，
+   * 这些动态标签可以相互嵌套且实现上采用单向链表进行应用，这样后面如果需要增加其他动态标签，
+   * 就只需要新增对应的SqlNode实现就能支持。mybatis使用OGNL表达式语言。
+   * 对sqlNode的调用在SQL执行期间的DynamicSqlSource.getBoundSql()方法中，SQL执行过程我们后面会讲解。
+   *
+   * 其中MixedSqlNode代表了所有具体SqlNode的集合，其他分别代表了一种类型的SqlNode。
+   * @param node
+   * @return
+   */
+  // 动态标签解析实现
   protected MixedSqlNode parseDynamicTags(XNode node) {
     List<SqlNode> contents = new ArrayList<>();
     NodeList children = node.getNode().getChildNodes();
@@ -83,6 +102,7 @@ public class XMLScriptBuilder extends BaseBuilder {
         String data = child.getStringBody("");
         TextSqlNode textSqlNode = new TextSqlNode(data);
         if (textSqlNode.isDynamic()) {
+          // 判断文本节点中是否包含了${}，如果包含则为动态文本节点，否则为静态文本节点，静态文本节点在运行时不需要二次处理
           contents.add(textSqlNode);
           isDynamic = true;
         } else {
@@ -90,10 +110,12 @@ public class XMLScriptBuilder extends BaseBuilder {
         }
       } else if (child.getNode().getNodeType() == Node.ELEMENT_NODE) { // issue #628
         String nodeName = child.getNode().getNodeName();
+        // 首先根据节点名称获取到对应的节点处理器
         NodeHandler handler = nodeHandlerMap.get(nodeName);
         if (handler == null) {
           throw new BuilderException("Unknown element <" + nodeName + "> in SQL statement.");
         }
+        // 使用对应的节点处理器处理本节点
         handler.handleNode(child, contents);
         isDynamic = true;
       }
@@ -105,20 +127,44 @@ public class XMLScriptBuilder extends BaseBuilder {
     void handleNode(XNode nodeToHandle, List<SqlNode> targetContents);
   }
 
+  /**
+   * bind 元素可以使用 OGNL 表达式创建一个变量并将其绑定到当前SQL节点的上下文。
+   * <select id="selectBlogsLike" parameterType="BlogQuery" resultType="Blog">
+   *   <bind name="pattern" value="'%' + title + '%'" />
+   *   SELECT * FROM BLOG
+   *   WHERE title LIKE #{pattern}
+   * </select>
+   */
   private class BindHandler implements NodeHandler {
     public BindHandler() {
       // Prevent Synthetic Access
     }
 
+    //对于这种情况，bind还可以用来预防 SQL 注入。
     @Override
     public void handleNode(XNode nodeToHandle, List<SqlNode> targetContents) {
+      // 变量名称
       final String name = nodeToHandle.getStringAttribute("name");
+      // OGNL表达式
       final String expression = nodeToHandle.getStringAttribute("value");
       final VarDeclSqlNode node = new VarDeclSqlNode(name, expression);
       targetContents.add(node);
     }
   }
 
+  /**
+   * trim使用最多的情况是截掉where条件中的前置OR和AND，update的set子句中的后置”,”，同时在内容不为空的时候加上where和set
+   * select * from user
+   * <trim prefix="WHERE" prefixoverride="AND |OR">
+   *     <if test="name != null and name.length()>0"> AND name=#{name}</if>
+   *     <if test="gender != null and gender.length()>0"> AND gender=#{gender}</if>
+   * </trim>
+   * update user
+   * <trim prefix="set" suffixoverride="," suffix=" where id = #{id} ">
+   *     <if test="name != null and name.length()>0"> name=#{name} , </if>
+   *     <if test="gender != null and gender.length()>0"> gender=#{gender} ,  </if>
+   * </trim>
+   */
   private class TrimHandler implements NodeHandler {
     public TrimHandler() {
       // Prevent Synthetic Access
@@ -127,9 +173,13 @@ public class XMLScriptBuilder extends BaseBuilder {
     @Override
     public void handleNode(XNode nodeToHandle, List<SqlNode> targetContents) {
       MixedSqlNode mixedSqlNode = parseDynamicTags(nodeToHandle);
+      // 包含的子节点解析后SQL文本不为空时要添加的前缀内容
       String prefix = nodeToHandle.getStringAttribute("prefix");
+      // 要覆盖的子节点解析后SQL文本前缀内容
       String prefixOverrides = nodeToHandle.getStringAttribute("prefixOverrides");
+      // 包含的子节点解析后SQL文本不为空时要添加的后缀内容
       String suffix = nodeToHandle.getStringAttribute("suffix");
+      // 要覆盖的子节点解析后SQL文本后缀内容
       String suffixOverrides = nodeToHandle.getStringAttribute("suffixOverrides");
       TrimSqlNode trim = new TrimSqlNode(configuration, mixedSqlNode, prefix, prefixOverrides, suffix, suffixOverrides);
       targetContents.add(trim);
@@ -149,6 +199,19 @@ public class XMLScriptBuilder extends BaseBuilder {
     }
   }
 
+  /**
+   * set标签主要用于解决update动态字段
+   * <update id="updateAuthorIfNecessary">
+   *   update Author
+   *     <set>
+   *       <if test="username != null">username=#{username},</if>
+   *       <if test="password != null">password=#{password},</if>
+   *       <if test="email != null">email=#{email},</if>
+   *       <if test="bio != null">bio=#{bio}</if>
+   *     </set>
+   *   where id=#{id}
+   * </update>
+   */
   private class SetHandler implements NodeHandler {
     public SetHandler() {
       // Prevent Synthetic Access
@@ -162,6 +225,11 @@ public class XMLScriptBuilder extends BaseBuilder {
     }
   }
 
+  /**
+   * foreach可以将任何可迭代对象（如列表、集合等）和任何的字典或者数组对象传递给foreach作为集合参数。
+   * 当使用可迭代对象或者数组时，index是当前迭代的次数，item的值是本次迭代获取的元素。
+   * 当使用字典（或者Map.Entry对象的集合）时，index是键，item是值。
+   */
   private class ForEachHandler implements NodeHandler {
     public ForEachHandler() {
       // Prevent Synthetic Access
@@ -189,6 +257,7 @@ public class XMLScriptBuilder extends BaseBuilder {
     @Override
     public void handleNode(XNode nodeToHandle, List<SqlNode> targetContents) {
       MixedSqlNode mixedSqlNode = parseDynamicTags(nodeToHandle);
+      // 获取if属性的值，将值设置为IfSqlNode的属性，便于运行时解析
       String test = nodeToHandle.getStringAttribute("test");
       IfSqlNode ifSqlNode = new IfSqlNode(mixedSqlNode, test);
       targetContents.add(ifSqlNode);
@@ -200,6 +269,7 @@ public class XMLScriptBuilder extends BaseBuilder {
       // Prevent Synthetic Access
     }
 
+    //otherwise标签可以说并不是一个真正有意义的标签，它不做任何处理，用在choose标签的最后默认分支
     @Override
     public void handleNode(XNode nodeToHandle, List<SqlNode> targetContents) {
       MixedSqlNode mixedSqlNode = parseDynamicTags(nodeToHandle);
@@ -207,6 +277,9 @@ public class XMLScriptBuilder extends BaseBuilder {
     }
   }
 
+  /**
+   * choose节点应该说和switch是等价的，其中的when就是各种条件判断
+   */
   private class ChooseHandler implements NodeHandler {
     public ChooseHandler() {
       // Prevent Synthetic Access
@@ -216,6 +289,7 @@ public class XMLScriptBuilder extends BaseBuilder {
     public void handleNode(XNode nodeToHandle, List<SqlNode> targetContents) {
       List<SqlNode> whenSqlNodes = new ArrayList<>();
       List<SqlNode> otherwiseSqlNodes = new ArrayList<>();
+      //// 拆分出when 和 otherwise 节点
       handleWhenOtherwiseNodes(nodeToHandle, whenSqlNodes, otherwiseSqlNodes);
       SqlNode defaultSqlNode = getDefaultSqlNode(otherwiseSqlNodes);
       ChooseSqlNode chooseSqlNode = new ChooseSqlNode(whenSqlNodes, defaultSqlNode);

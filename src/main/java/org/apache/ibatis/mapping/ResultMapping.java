@@ -40,6 +40,7 @@ public class ResultMapping {
   private String nestedQueryId;
   private Set<String> notNullColumns;
   private String columnPrefix;
+  // 标记是否构造器属性，是否ID属性
   private List<ResultFlag> flags;
   private List<ResultMapping> composites;
   private String resultSet;

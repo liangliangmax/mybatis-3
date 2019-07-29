@@ -28,7 +28,12 @@ import org.apache.ibatis.session.defaults.DefaultSqlSessionFactory;
 /**
  * Builds {@link SqlSession} instances.
  *
- * @author Clinton Begin
+ * SqlSessionFactory提供了根据字节流、字符流以及直接使用org.apache.ibatis.session.Configuration配置类（后续我们会详细讲到）三种途径的读取配置信息方式，
+ * 无论是字符流还是字节流方式，
+ * 首先都是将XML配置文件构建为Configuration配置类，
+ * 然后将Configuration设置到SqlSessionFactory默认实现DefaultSqlSessionFactory的configurationz字段并返回。
+ * 所以，它本身很简单，解析配置文件的关键逻辑都委托给XMLConfigBuilder了，
+ * 我们以字符流也就是java.io.Reader为例进行分析，SqlSessionFactoryBuilder使用了XMLConfigBuilder作为解析器。
  */
 public class SqlSessionFactoryBuilder {
 

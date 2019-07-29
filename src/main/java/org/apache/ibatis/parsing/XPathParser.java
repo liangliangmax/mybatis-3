@@ -258,6 +258,8 @@ public class XPathParser {
         public void warning(SAXParseException exception) throws SAXException {
         }
       });
+
+      //主要是根据mybatis自身需要创建一个文档解析器，然后调用parse将输入input source解析为DOM XML文档并返回。
       return builder.parse(inputSource);
     } catch (Exception e) {
       throw new BuilderException("Error creating document instance.  Cause: " + e, e);

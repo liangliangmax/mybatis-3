@@ -32,6 +32,11 @@ import org.xml.sax.SAXException;
  */
 public class XMLMapperEntityResolver implements EntityResolver {
 
+  /**
+   * mybatis解析的时候，引用了本地的DTD文件，和本类在同一个package下，其中的ibatis-3-config.dtd应该主要是用于兼容用途。
+   * 在其中getInputSource(MYBATIS_CONFIG_DTD, publicId, systemId)的调用里面有两个参数publicId（公共标识符）和systemId（系统标示符），
+   * 他们是XML 1.0规范的一部分
+   */
   private static final String IBATIS_CONFIG_SYSTEM = "ibatis-3-config.dtd";
   private static final String IBATIS_MAPPER_SYSTEM = "ibatis-3-mapper.dtd";
   private static final String MYBATIS_CONFIG_SYSTEM = "mybatis-3-config.dtd";

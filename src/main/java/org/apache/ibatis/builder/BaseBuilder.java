@@ -29,6 +29,14 @@ import org.apache.ibatis.type.TypeHandler;
 import org.apache.ibatis.type.TypeHandlerRegistry;
 
 /**
+ * BaseBuilder中提供类型处理器、JDBC类型、结果集类型、别名等的解析，
+ * 因为在mybatis配置文件、mapper文件解析、SQL映射语句解析、基于注解的mapper文件解析过程中，都会频繁的遇到类型处理相关的解析。
+ * 但是BaseBuilder也没有定义需要子类实现的负责解析的抽象接口，
+ * 虽然XMLMapperBuilder、XMLConfigBuilder的解析入口是parse方法，XMLStatementBuilder的入口是parseStatementNode，
+ * 不仅如此，MapperBuilderAssistant继承了BaseBuilder，而不是MapperAnnotationBuilder，
+ * 实际上MapperAnnotationBuilder才是解析Mapper接口的主控类。
+ *
+ * 所以从实现上来说，BaseBuilder如果要作为具体Builder类的抽象父类，那就应该定义一个需要子类实现的parse接口，要么就用组合代替继承。
  * @author Clinton Begin
  */
 public abstract class BaseBuilder {
