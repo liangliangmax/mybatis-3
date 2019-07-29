@@ -60,6 +60,7 @@ public abstract class BaseStatementHandler implements StatementHandler {
     this.objectFactory = configuration.getObjectFactory();
 
     if (boundSql == null) { // issue #435, get the key before calculating the statement
+      // 首先执行SelectKey对应的SQL语句把ID生成
       generateKeys(parameterObject);
       boundSql = mappedStatement.getBoundSql(parameterObject);
     }
@@ -80,13 +81,23 @@ public abstract class BaseStatementHandler implements StatementHandler {
     return parameterHandler;
   }
 
+  // prepare SQL语句
   @Override
   public Statement prepare(Connection connection, Integer transactionTimeout) throws SQLException {
     ErrorContext.instance().sql(boundSql.getSql());
     Statement statement = null;
     try {
+      // 首先实例化语句，因为PREPARE和非PREPARE不同,所以留给具体子类实现
+      // 不同类型语句的初始化过程不同,比如Statement语句直接调用JDBC java.sql.Connection.createStatement，
+      // 而PrepareStatement则是调用java.sql.Connection.prepareStatement
       statement = instantiateStatement(connection);
+
+      // 设置JDBC语句超时时间,注：数据库服务器端也可以设置语句超时时间。mysql通过参数max_statement_time设置,oracle截止12.2c不支持
       setStatementTimeout(statement, transactionTimeout);
+
+      // 设置fetch大小
+      // fetchSize设置每次从服务器端提取的行数,默认不同数据库实现不同,mysql一次性提取全部,oracle默认10。
+      // 正确设置fetchSize可以避免OOM并且对性能有一定的影响,尤其是在网络延时较大的情况下
       setFetchSize(statement);
       return statement;
     } catch (SQLException e) {

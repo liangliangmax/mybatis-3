@@ -22,6 +22,14 @@ import org.apache.ibatis.cache.Cache;
 import org.apache.ibatis.cache.CacheException;
 
 /**
+ *
+ * mybatis提供了基本实现org.apache.ibatis.cache.impl.PerpetualCache，内部采用原始HashMap实现。
+ * 第二个需要知道的方面是mybatis有一级缓存和二级缓存。一级缓存是SqlSession级别的缓存，
+ * 不同SqlSession之间的缓存数据区域（HashMap）是互相不影响，
+ * MyBatis默认支持一级缓存，不需要任何的配置，
+ * 默认情况下(一级缓存的有效范围可通过参数localCacheScope参数修改，取值为SESSION或者STATEMENT)，
+ * 在一个SqlSession的查询期间，只要没有发生commit/rollback或者调用close()方法，
+ * 那么mybatis就会先根据当前执行语句的CacheKey到一级缓存中查找，如果找到了就直接返回，不到数据库中执行。
  * @author Clinton Begin
  */
 public class PerpetualCache implements Cache {

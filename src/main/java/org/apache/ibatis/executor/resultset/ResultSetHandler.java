@@ -23,6 +23,10 @@ import java.util.List;
 import org.apache.ibatis.cursor.Cursor;
 
 /**
+ * 接口中定义的三个接口分别用于处理常规查询的结果集,游标查询的结果集以及存储过程调用的出参设置。
+ * 和参数处理器一样,结果集处理器也只有一个默认实现DefaultResultSetHandler。
+ * 结果集处理器的功能包括对象的实例化、属性自动匹配计算、常规属性赋值、嵌套ResultMap的处理、嵌套查询的处理、鉴别器结果集的处理等，
+ * 每个功能我们在分析SQL语句执行selectXXX的时候都详细的讲解过了，具体可以参见selectXXX部分
  * @author Clinton Begin
  */
 public interface ResultSetHandler {

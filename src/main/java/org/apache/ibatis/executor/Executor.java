@@ -28,6 +28,13 @@ import org.apache.ibatis.session.RowBounds;
 import org.apache.ibatis.transaction.Transaction;
 
 /**
+ *
+ * 什么是执行器？所有我们在应用层通过sqlSession执行的各类selectXXX和增删改操作在做了动态sql和参数相关的封装处理后，
+ * 都被委托给具体的执行器去执行，包括一、二级缓存的管理，事务的具体管理，
+ * Statement和具体JDBC层面优化的实现等等。所以执行器比较像是sqlSession下的各个策略工厂实现，
+ * 用户通过配置决定使用哪个策略工厂。
+ * 只不过执行器在一个mybatis配置下只有一个，这可能无法适应于所有的情况，
+ * 尤其是哪些微服务做得不是特别好的中小型公司，因为这些系统通常混搭了OLTP和ETL功能。
  * @author Clinton Begin
  */
 public interface Executor {

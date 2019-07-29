@@ -33,6 +33,8 @@ import org.apache.ibatis.session.RowBounds;
 import org.apache.ibatis.transaction.Transaction;
 
 /**
+ *
+ * 缓存执行器不是真正功能上独立的执行器，而是非缓存执行器的装饰器模式。
  * @author Clinton Begin
  * @author Eduardo Macarron
  */
@@ -89,15 +91,39 @@ public class CachingExecutor implements Executor {
     return delegate.queryCursor(ms, parameter, rowBounds);
   }
 
+  /**
+   * 在mybatis的缓存实现中，
+   * 缓存键CacheKey的格式为：cacheKey=ID + offset + limit + sql + parameterValues + environmentId
+   *
+   * 对于一级缓存，commit/rollback都会清空一级缓存。
+   * 对于二级缓存，DML操作或者显示设置语句层面的flushCache属性都会使得二级缓存失效。
+   * 　　在二级缓存容器的具体回收策略实现上，有下列几种：
+   *
+   * LRU – 最近最少使用的：移除最长时间不被使用的对象，也是默认的选项，其实现类是org.apache.ibatis.cache.decorators.LruCache。
+   * FIFO – 先进先出：按对象进入缓存的顺序来移除它们，其实现类是org.apache.ibatis.cache.decorators.FifoCache。
+   * SOFT – 软引用：移除基于垃圾回收器状态和软引用规则的对象，其实现类是org.apache.ibatis.cache.decorators.SoftCache。
+   * WEAK – 弱引用：更积极地移除基于垃圾收集器状态和弱引用规则的对象，其实现类是org.apache.ibatis.cache.decorators.WeakCache。
+
+     在缓存的设计上，Mybatis的所有Cache算法都是基于装饰器/Composite模式对PerpetualCache扩展增加功能。
+
+   　 对于模块化微服务系统来说，应该来说mybatis的一二级缓存对业务数据都不适合，
+   尤其是对于OLTP系统来说，CRM/BI这些不算，如果要求数据非常精确的话，也不是特别合适。
+   对这些要求数据准确的系统来说，尽可能只使用mybatis的ORM特性比较靠谱。
+   但是有一部分数据如果前期没有很少的设计缓存的话，是很有价值的，
+   比如说对于一些配置类数据比如数据字典、系统参数、业务配置项等很少变化的数据。
+   */
   @Override
   public <E> List<E> query(MappedStatement ms, Object parameterObject, RowBounds rowBounds, ResultHandler resultHandler, CacheKey key, BoundSql boundSql)
       throws SQLException {
     Cache cache = ms.getCache();
+    // 首先判断是否启用了二级缓存
     if (cache != null) {
       flushCacheIfRequired(ms);
       if (ms.isUseCache() && resultHandler == null) {
         ensureNoOutParams(ms, boundSql);
         @SuppressWarnings("unchecked")
+        // 如果二级缓存中找到了记录就直接返回,否则到DB查询后进行缓存
+        // 然后判断缓存中是否有对应的缓存条目(正常情况下，执行DML操作会清空缓存，也可以语句层面明确明确设置)，有的话则返回，这样就不用二次查询了
         List<E> list = (List<E>) tcm.getObject(cache, key);
         if (list == null) {
           list = delegate.query(ms, parameterObject, rowBounds, resultHandler, key, boundSql);
@@ -131,6 +157,7 @@ public class CachingExecutor implements Executor {
     }
   }
 
+  // 存储过程不支持二级缓存
   private void ensureNoOutParams(MappedStatement ms, BoundSql boundSql) {
     if (ms.getStatementType() == StatementType.CALLABLE) {
       for (ParameterMapping parameterMapping : boundSql.getParameterMappings()) {

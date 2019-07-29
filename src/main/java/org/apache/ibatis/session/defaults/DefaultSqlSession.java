@@ -93,6 +93,20 @@ public class DefaultSqlSession implements SqlSession {
     return this.selectMap(statement, parameter, mapKey, RowBounds.DEFAULT);
   }
 
+  /**
+   * 从方法签名上，我们可以看到，和selectList不同，
+   * selectMap多了一个参数mapKey，mapKey就是用来指定返回类型中作为key的那个字段名，
+   * 具体的核心逻辑委托给了selectList方法，
+   * 只是在返回结果后，mapResultHandler进行了二次处理。
+   * DefaultMapResultHandler是众多ResultHandler的实现之一。
+   * @param statement Unique identifier matching the statement to use.
+   * @param parameter A parameter object to pass to the statement.
+   * @param mapKey The property to use as key for each value in the list.
+   * @param rowBounds  Bounds to limit object retrieval
+   * @param <K>
+   * @param <V>
+   * @return
+   */
   @Override
   public <K, V> Map<K, V> selectMap(String statement, Object parameter, String mapKey, RowBounds rowBounds) {
     final List<? extends V> list = selectList(statement, parameter, rowBounds);

@@ -44,6 +44,10 @@ public class DefaultMapResultHandler<K, V> implements ResultHandler<V> {
     this.mapKey = mapKey;
   }
 
+  /**
+   * 功能就是把List转换为Map<object.prop1,object>格式
+   * @param context
+   */
   @Override
   public void handleResult(ResultContext<? extends V> context) {
     final V value = context.getResultObject();

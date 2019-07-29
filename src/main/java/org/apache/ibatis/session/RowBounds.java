@@ -16,6 +16,7 @@
 package org.apache.ibatis.session;
 
 /**
+ * RowBounds是一个分页查询的参数封装，默认是不分页
  * @author Clinton Begin
  */
 public class RowBounds {

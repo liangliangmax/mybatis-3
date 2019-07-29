@@ -28,6 +28,16 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface Intercepts {
+
+  /**
+   * 它有一个类型为Signature数组的value属性，如果没有指定，
+   * 它会拦截StatementHandler、ResultSetHandler、ParameterHandler和Executor这四个核心接口对象中的所有方法。
+   * 如需改变默认行为，可以通过明确设置value的值
+   *
+   * @Intercepts({@Signature(type = StatementHandler.class, method = "prepare", args = {Connection.class}),
+   *         @Signature(type = ResultSetHandler.class, method = "handleResultSets", args = {Statement.class})})
+   * @return
+   */
   Signature[] value();
 }
 
