@@ -20,9 +20,15 @@ public class Application {
 
       SqlSession sqlSession = sqlSessionFactory.openSession();
       try {
+        //两种写法
         List<User> list = sqlSession.selectList("com.liang.UserMapper.getUsers");
 
         System.out.println(list);
+
+
+        UserMapper userMapper = sqlSession.getMapper(UserMapper.class);
+
+        System.out.println(userMapper.getUserById("fdsafe2f2f2f2"));
       }catch (Exception e1){
         e1.printStackTrace();
       }finally {

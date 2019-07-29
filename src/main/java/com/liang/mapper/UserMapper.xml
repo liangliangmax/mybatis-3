@@ -7,4 +7,8 @@
   <select id="getUsers" resultType="com.liang.User">
         select id,username,password from user
     </select>
+
+  <select id="getUserById" parameterType="String" resultType="com.liang.User">
+        select id,username,password from user where id = #{id}
+    </select>
 </mapper>
