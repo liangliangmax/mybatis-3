@@ -2,6 +2,47 @@
 <!DOCTYPE configuration PUBLIC "-//mybatis.org//DTD Config 3.0//EN"
   "http://mybatis.org/dtd/mybatis-3-config.dtd">
 <configuration>
+
+  <properties>
+    <property name="someProperty" value="100"/>
+  </properties>
+
+  <settings>
+    <setting name="cacheEnabled" value="true"/>
+    <setting name="lazyLoadingEnabled" value="true"/>
+    <setting name="multipleResultSetsEnabled" value="true"/>
+    <setting name="useColumnLabel" value="true"/>
+    <setting name="useGeneratedKeys" value="false"/>
+    <setting name="autoMappingBehavior" value="PARTIAL"/>
+    <setting name="autoMappingUnknownColumnBehavior" value="WARNING"/>
+    <setting name="defaultExecutorType" value="SIMPLE"/>
+    <setting name="defaultStatementTimeout" value="25"/>
+    <setting name="defaultFetchSize" value="100"/>
+    <setting name="safeRowBoundsEnabled" value="false"/>
+    <setting name="mapUnderscoreToCamelCase" value="false"/>
+    <setting name="localCacheScope" value="SESSION"/>
+    <setting name="jdbcTypeForNull" value="OTHER"/>
+    <setting name="lazyLoadTriggerMethods"
+             value="equals,clone,hashCode,toString"/>
+  </settings>
+
+  <!--存在的意义仅在于用来减少类完全限定名的冗余。-->
+  <typeAliases>
+    <typeAlias alias="User" type="com.liang.User" />
+  </typeAliases>
+
+  <!-- mybatis-config.xml -->
+  <objectFactory type="com.liang.ExampleObjectFactory">
+    <property name="someProperty" value="100"/>
+  </objectFactory>
+
+  <!-- mybatis-config.xml -->
+  <plugins>
+    <plugin interceptor="com.liang.ExamplePlugin">
+      <property name="someProperty" value="100"/>
+    </plugin>
+  </plugins>
+
   <environments default="development">
     <environment id="development">
       <transactionManager type="JDBC"/>
@@ -13,12 +54,6 @@
       </dataSource>
     </environment>
   </environments>
-
-
-  <!--<typeAliases>-->
-    <!--&lt;!&ndash;存在的意义仅在于用来减少类完全限定名的冗余。&ndash;&gt;-->
-    <!--<typeAlias alias="User" type="com.liang.User" />-->
-  <!--</typeAliases>-->
 
   <mappers>
     <mapper resource="com/liang/mapper/UserMapper.xml"/>

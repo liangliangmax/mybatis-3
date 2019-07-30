@@ -26,9 +26,9 @@ public class Application {
         System.out.println(list);
 
 
-        UserMapper userMapper = sqlSession.getMapper(UserMapper.class);
+        //UserMapper userMapper = sqlSession.getMapper(UserMapper.class);
 
-        System.out.println(userMapper.getUserById("fdsafe2f2f2f2"));
+        //System.out.println(userMapper.getUserById("fdsafe2f2f2f2"));
       }catch (Exception e1){
         e1.printStackTrace();
       }finally {

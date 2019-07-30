@@ -140,8 +140,8 @@ public class XMLConfigBuilder extends BaseBuilder {
       //得到setting之后，调用settingsElement(Properties props)将各值赋值给configuration，
       // 同时在这里有重新设置了默认值，所有这一点很重要，configuration中的默认值不一定是真正的默认值。
 
-      loadCustomVfs(settings);
-      loadCustomLogImpl(settings);
+      loadCustomVfs(settings); //从配置文件中读取配置的实现类，然后将其进行实例化
+      loadCustomLogImpl(settings); //从配置文件中读取配置的日志实现类，然后将其进行实例化
       typeAliasesElement(root.evalNode("typeAliases"));
       pluginElement(root.evalNode("plugins"));
       objectFactoryElement(root.evalNode("objectFactory"));
@@ -170,9 +170,9 @@ public class XMLConfigBuilder extends BaseBuilder {
     if (context == null) {
       return new Properties();
     }
-    Properties props = context.getChildrenAsProperties();
+    Properties props = context.getChildrenAsProperties(); //获取xml文件中的配置节点信息
     // Check that all settings are known to the configuration class
-    // 检查所有从settings加载的设置,确保它们都在Configuration定义的范围内
+    // 检查所有从settings加载的设置,确保它们都在Configuration定义的范围内，就是别出现configuration类中没有的属性
     MetaClass metaConfig = MetaClass.forClass(Configuration.class, localReflectorFactory);
     for (Object key : props.keySet()) {
       if (!metaConfig.hasSetter(String.valueOf(key))) {
@@ -270,7 +270,7 @@ public class XMLConfigBuilder extends BaseBuilder {
         //将interceptor指定的名称解析为Interceptor类型
         Interceptor interceptorInstance = (Interceptor) resolveClass(interceptor).newInstance();
         interceptorInstance.setProperties(properties);
-        configuration.addInterceptor(interceptorInstance);
+        configuration.addInterceptor(interceptorInstance);//将插件添加到configuration类中
       }
     }
   }

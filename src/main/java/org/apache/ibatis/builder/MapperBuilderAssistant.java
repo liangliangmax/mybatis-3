@@ -214,7 +214,7 @@ public class MapperBuilderAssistant extends BaseBuilder {
     ResultMap resultMap = new ResultMap.Builder(configuration, id, type, resultMappings, autoMapping)
         .discriminator(discriminator)
         .build();
-    configuration.addResultMap(resultMap);
+    configuration.addResultMap(resultMap);//将每个xml中解析的resultMap变成全类名，然后添加到configuration中
     return resultMap;
   }
 

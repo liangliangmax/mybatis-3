@@ -356,7 +356,7 @@ public class MapperAnnotationBuilder {
     // 获取语言驱动器
     LanguageDriver languageDriver = getLanguageDriver(method);
     // 获取方法的SqlSource对象,只有指定了@Select/@Insert/@Update/@Delete或者对应的Provider的方法才会被当作mapper,否则只是和mapper文件中对应语句的一个运行时占位符
-    SqlSource sqlSource = getSqlSourceFromAnnotations(method, parameterTypeClass, languageDriver);
+    SqlSource sqlSource = getSqlSourceFromAnnotations(method, parameterTypeClass, languageDriver); //从注解上面解析出来的sql语句
     if (sqlSource != null) {
       // 获取方法的属性设置，对应<select>中的各种属性
       Options options = method.getAnnotation(Options.class);
@@ -458,6 +458,8 @@ public class MapperAnnotationBuilder {
     return configuration.getLanguageDriver(langClass);
   }
 
+  // 获取参数类型,如果有多个参数,这种情况下就返回org.apache.ibatis.binding.MapperMethod.ParamMap.class，
+  // ParamMap是一个继承于HashMap的类，否则返回实际类型
   private Class<?> getParameterType(Method method) {
     Class<?> parameterType = null;
     Class<?>[] parameterTypes = method.getParameterTypes();
