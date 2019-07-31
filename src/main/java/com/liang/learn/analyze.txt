@@ -611,8 +611,807 @@ Application.main
             --> return build(configuration)
                 --> return new DefaultSqlSessionFactory(config);
 
+        /**
+         *
+         * 主要有多种形式的重载，除了使用默认设置外，可以指定自动提交模式、特定的jdbc连接、事务隔离级别，
+         * 以及指定的执行器类型。
+         * 关于执行器类型，mybatis提供了三种执行器类型：SIMPLE, REUSE, BATCH。
+         * 后面我们会详细分析每种类型的执行器的差别以及各自的适用场景。
+         * 我们以最简单的无参方法切入
+         * （按照一般的套路，如果定义了多个重载的方法或者构造器，内部实现一定是设置作者认为最合适的默认值，然后调用次多参数的方法，直到最后）
+         */
     --> SqlSession sqlSession = sqlSessionFactory.openSession();
+        --> DefaultSqlSessionFactory.openSession()
+                // 使用默认的执行器类型(默认是SIMPLE)，默认隔离级别，非自动提交 委托给openSessionFromDataSource方法
+            --> openSessionFromDataSource(configuration.getDefaultExecutorType(), null, false)
+                    /**
+                       * mybatis的事务管理模式分为两种，自动提交和手工提交，
+                       * DefaultSqlSessionFactory的openSession中重载中，
+                       * 提供了一个参数用于控制是否自动提交事务，
+                       * 该参数最终被传递给 java.sql.Connection.setAutoCommit()方法用于控制是否自动提交事务(默认情况下，连接是自动提交的)
+                       */
+                --> openSessionFromDataSource(ExecutorType execType, TransactionIsolationLevel level, boolean autoCommit)
+                    --> final Environment environment = configuration.getEnvironment();
+                    --> final TransactionFactory transactionFactory = getTransactionFactoryFromEnvironment(environment); // 获取事务管理器, 支持从数据源或者直接获取
+                            // 如果没有配置environment或者environment的事务管理器为空,则使用受管的事务管理器
+                            // 除非什么都没有配置,否则在mybatis-config里面,至少要配置一个environment，此时事务工厂不允许为空
+                            // 对于jdbc类型的事务管理器,则返回JdbcTransactionFactory,其内部操作mybatis的JdbcTransaction实现(采用了Facade模式)，后者对jdbc连接操作
+                        --> return environment.getTransactionFactory();
+
+                        // 从数据源创建一个事务, 同样,数据源必须配置,
+                        // mybatis内置了JNDI、POOLED、UNPOOLED三种类型的数据源,
+                        // 其中POOLED对应的实现为org.apache.ibatis.datasource.pooled.PooledDataSource,
+                        // 它是mybatis自带实现的一个同步、线程安全的数据库连接池 一般在生产中,我们会使用dbcp或者druid连接池
+                    --> tx = transactionFactory.newTransaction(environment.getDataSource(), level, autoCommit);
+                        --> return new JdbcTransaction(ds, level, autoCommit);
+                            --> dataSource = ds;
+                                level = desiredLevel;
+                                autoCommit = desiredAutoCommit;
+
+                        /**
+                         *
+                         * 什么是执行器？所有我们在应用层通过sqlSession执行的各类selectXXX和增删改操作在做了动态sql和参数相关的封装处理后，
+                         * 都被委托给具体的执行器去执行，包括一、二级缓存的管理，事务的具体管理，
+                         * Statement和具体JDBC层面优化的实现等等。所以执行器比较像是sqlSession下的各个策略工厂实现，
+                         * 用户通过配置决定使用哪个策略工厂。
+                         * 只不过执行器在一个mybatis配置下只有一个，这可能无法适应于所有的情况，
+                         * 尤其是哪些微服务做得不是特别好的中小型公司，因为这些系统通常混搭了OLTP和ETL功能。
+                         */
+                    --> final Executor executor = configuration.newExecutor(tx, SIMPLE);
+                        --> executor = new SimpleExecutor(this, transaction);
+                            --> this.transaction = transaction;
+                                this.deferredLoads = new ConcurrentLinkedQueue<>();
+                                this.localCache = new PerpetualCache("LocalCache"); // mybatis的二级缓存 PerpetualCache实际上内部使用的是常规的Map
+                                this.localOutputParameterCache = new PerpetualCache("LocalOutputParameterCache"); // 用于存储过程出参
+                                this.closed = false;
+                                this.configuration = configuration;
+                                this.wrapper = this;
+
+                            //缓存执行器不是真正功能上独立的执行器，而是非缓存执行器的装饰器模式。
+                        --> executor = new CachingExecutor(executor);
+
+                        --> executor = (Executor) interceptorChain.pluginAll(executor);
+                            --> protected final InterceptorChain interceptorChain = new InterceptorChain();
+                                --> private final List<Interceptor> interceptors = new ArrayList<>();
+                            --> interceptor.plugin(executor)
+                                --> Interceptor.plugin(executor)
+                                    --> Plugin.wrap(executor, this)
+                                        --> Map<Class<?>, Set<Method>> signatureMap = getSignatureMap(interceptor);
+                                            --> Intercepts interceptsAnnotation = interceptor.getClass().getAnnotation(Intercepts.class);
+                                            --> Signature[] sigs = interceptsAnnotation.value();
+                                            --> Set<Method> methods = signatureMap.computeIfAbsent(sig.type(), k -> new HashSet<>());
+                                            --> Method method = sig.type().getMethod(sig.method(), sig.args());
+                                            --> methods.add(method);
+                                            --> return signatureMap;
+
+                                        --> Class<?> type = executor.getClass();  //class org.apache.ibatis.executor.CachingExecutor
+                                        --> Class<?>[] interfaces = getAllInterfaces(type, signatureMap); //["interface org.apache.ibatis.executor.Executor"]
+
+                                            //生成executor的动态代理对象，每个Plugin都实现了InvocationHandler接口，相当于在executor外面包装了好几层
+                                        --> return Proxy.newProxyInstance(
+                                                      type.getClassLoader(),
+                                                      interfaces,
+                                                      new Plugin(executor, interceptor, signatureMap));
+
+                        --> return executor
+
+                    --> return new DefaultSqlSession(configuration, executor, autoCommit)
+                        --> this.configuration = configuration;
+                            this.executor = executor;
+                            this.dirty = false;
+                            this.autoCommit = autoCommit;
+
 
     --> List<User> list = sqlSession.selectList("com.liang.UserMapper.getUsers");
+        --> DefaultSqlSession.selectList("com.liang.UserMapper.getUsers")
+            --> DefaultSqlSession.selectList("com.liang.UserMapper.getUsers", parameter, rowBounds)
+
+                --> MappedStatement ms = Configuration.getMappedStatement("com.liang.UserMapper.getUsers")
+                    --> getMappedStatement("com.liang.UserMapper.getUsers", true)
+                            //将所有未初始化的方法，缓存等在重亲初始化一遍
+                        --> buildAllStatements()
+                        --> return mappedStatements.get("com.liang.UserMapper.getUsers")
+
+                --> parameter = wrapCollection(parameter)   // null
+
+                --> return executor.query(ms, parameter, rowBounds, Executor.NO_RESULT_HANDLER);
+                        //首先会被plugin拦截
+                    --> Plugin.invoke
+
+                    --> CachingExecutor.query(MappedStatement, parameterObject, RowBounds, ResultHandler)
+                        --> BoundSql boundSql = ms.getBoundSql(parameterObject);
+
+                            --> BoundSql boundSql = sqlSource.getBoundSql(parameterObject);
+                                --> StaticSqlSource.getBoundSql(parameterObject)
+                                    --> return new BoundSql(configuration, sql, parameterMappings, parameterObject);
+                            --> List<ParameterMapping> parameterMappings = boundSql.getParameterMappings();
+                            --> boundSql = new BoundSql(configuration, boundSql.getSql(), parameterMap.getParameterMappings(), parameterObject);
+
+                            //设置缓存
+                            /**
+                               * 在mybatis的缓存实现中，
+                               * 缓存键CacheKey的格式为：cacheKey=ID + offset + limit + sql + parameterValues + environmentId
+                               *
+                               * 对于一级缓存，commit/rollback都会清空一级缓存。
+                               * 对于二级缓存，DML操作或者显示设置语句层面的flushCache属性都会使得二级缓存失效。
+                               * 　　在二级缓存容器的具体回收策略实现上，有下列几种：
+                               *
+                               * LRU – 最近最少使用的：移除最长时间不被使用的对象，也是默认的选项，其实现类是org.apache.ibatis.cache.decorators.LruCache。
+                               * FIFO – 先进先出：按对象进入缓存的顺序来移除它们，其实现类是org.apache.ibatis.cache.decorators.FifoCache。
+                               * SOFT – 软引用：移除基于垃圾回收器状态和软引用规则的对象，其实现类是org.apache.ibatis.cache.decorators.SoftCache。
+                               * WEAK – 弱引用：更积极地移除基于垃圾收集器状态和弱引用规则的对象，其实现类是org.apache.ibatis.cache.decorators.WeakCache。
+
+                                 在缓存的设计上，Mybatis的所有Cache算法都是基于装饰器/Composite模式对PerpetualCache扩展增加功能。
+
+                               　 对于模块化微服务系统来说，应该来说mybatis的一二级缓存对业务数据都不适合，
+                                  尤其是对于OLTP系统来说，CRM/BI这些不算，如果要求数据非常精确的话，也不是特别合适。
+                                  对这些要求数据准确的系统来说，尽可能只使用mybatis的ORM特性比较靠谱。
+                                  但是有一部分数据如果前期没有很少的设计缓存的话，是很有价值的，
+                                  比如说对于一些配置类数据比如数据字典、系统参数、业务配置项等很少变化的数据。
+                               */
+                        --> CacheKey key = createCacheKey(ms, parameterObject, rowBounds, boundSql);
+                            --> CachingExecutor.createCacheKey(ms, parameterObject, rowBounds, boundSql)
+                                --> simpleExecutor.createCacheKey(ms, parameterObject, rowBounds, boundSql)
+                                        // 根据映射语句id,分页信息,jdbc规范化的预编译sql,所有映射参数的值以及环境id的值,计算出缓存Key
+                                    --> CacheKey cacheKey = new CacheKey();
+                                        cacheKey.update(ms.getId());
+                                        cacheKey.update(rowBounds.getOffset());
+                                        cacheKey.update(rowBounds.getLimit());
+                                        cacheKey.update(boundSql.getSql());
+                                        cacheKey.update(configuration.getEnvironment().getId());
+
+                        --> return query(ms, parameterObject, rowBounds, resultHandler, key, boundSql);
+                            --> simpleExecutor.query(ms, parameterObject, rowBounds, resultHandler, key, boundSql)
+                                    // 如果查询不需要应用结果处理器,则先从缓存获取,这样可以避免数据库查询。我们后面会分析到localCache是什么时候被设置进去的
+                                    // 如果在一级缓存中就直接获取
+                                --> list = resultHandler == null ? (List<E>) localCache.getObject(key) : null;
+
+                                    //不管是因为需要应用结果处理器还是缓存中没有,都从数据库中查询
+                                --> list = queryFromDatabase(ms, parameter, rowBounds, resultHandler, key, boundSql);
+                                    --> localCache.putObject("1322964187:1136138037:com.liang.UserMapper.getUsers:0:2147483647:select id,username,password from user:development", EXECUTION_PLACEHOLDER);
+
+                                        // doQuery是个抽象方法,每个具体的执行器都要自己去实现,我们先看SIMPLE的
+                                    --> simpleExecutor.doQuery(ms, parameter, rowBounds, resultHandler, boundSql);
+                                            // 根据上下文参数和具体的执行器new一个StatementHandler,
+                                            // 其中包含了所有必要的信息,比如结果处理器、参数处理器、执行器等等,
+                                            // 主要有三种类型的语句处理器UNPREPARE、PREPARE、CALLABLE。
+                                            // 默认是PREPARE类型，通过mapper语句上的statementType属性进行设置,一般除了存储过程外不应该设置
+                                        --> StatementHandler handler = configuration.newStatementHandler(wrapper, ms, parameter, rowBounds, resultHandler, boundSql);
+                                            --> StatementHandler statementHandler = new RoutingStatementHandler(executor, mappedStatement, parameterObject, rowBounds, resultHandler, boundSql);
+                                                --> statementHandler = new PreparedStatementHandler(executor, ms, parameter, rowBounds, resultHandler, boundSql);
+                                                    --> BaseStatementHandler(executor, mappedStatement, parameter, rowBounds, resultHandler, boundSql)
+                                                        --> this.configuration = mappedStatement.getConfiguration();
+                                                            this.executor = executor;
+                                                            this.mappedStatement = mappedStatement;
+                                                            this.rowBounds = rowBounds;
+
+                                                            this.typeHandlerRegistry = configuration.getTypeHandlerRegistry();
+                                                            this.objectFactory = configuration.getObjectFactory();
+                                                            this.boundSql = boundSql;
+
+                                                            this.parameterHandler = configuration.newParameterHandler(mappedStatement, parameterObject, boundSql);
+                                                                --> ParameterHandler parameterHandler = mappedStatement.getLang().createParameterHandler(mappedStatement, parameterObject, boundSql);
+                                                                    --> XMLLanguageDriver.createParameterHandler(MappedStatement mappedStatement, Object parameterObject, BoundSql boundSql)
+                                                                        --> return new DefaultParameterHandler(mappedStatement, parameterObject, boundSql);
+                                                                            --> this.mappedStatement = mappedStatement;
+                                                                                this.configuration = mappedStatement.getConfiguration();
+                                                                                this.typeHandlerRegistry = mappedStatement.getConfiguration().getTypeHandlerRegistry();
+                                                                                this.parameterObject = parameterObject;
+                                                                                this.boundSql = boundSql;
+
+                                                                    //为parameterHandler设置拦截器
+                                                                --> parameterHandler = (ParameterHandler) interceptorChain.pluginAll(parameterHandler);
+                                                                --> return parameterHandler
+
+                                                            this.resultSetHandler = configuration.newResultSetHandler(executor, mappedStatement, rowBounds, parameterHandler, resultHandler, boundSql);
+                                                                --> ResultSetHandler resultSetHandler = new DefaultResultSetHandler(executor, mappedStatement, parameterHandler, resultHandler, boundSql, rowBounds);
+                                                                    --> this.executor = executor;
+                                                                        this.configuration = mappedStatement.getConfiguration();
+                                                                        this.mappedStatement = mappedStatement;
+                                                                        this.rowBounds = rowBounds;
+                                                                        this.parameterHandler = parameterHandler;
+                                                                        this.boundSql = boundSql;
+                                                                        this.typeHandlerRegistry = configuration.getTypeHandlerRegistry();
+                                                                        this.objectFactory = configuration.getObjectFactory();
+                                                                        this.reflectorFactory = configuration.getReflectorFactory();
+                                                                        this.resultHandler = resultHandler;
+
+                                                                    //为resultSetHandler设置拦截器
+                                                                --> resultSetHandler = (ResultSetHandler) interceptorChain.pluginAll(resultSetHandler);
+                                                                --> return resultSetHandler;
+
+                                                //为statementHandler设置拦截器
+                                            --> statementHandler = (StatementHandler) interceptorChain.pluginAll(statementHandler)
+                                            --> return statementHandler
+
+                                        --> stmt = prepareStatement(handler, ms.getStatementLog());
+                                            --> SimpleExecutor.prepareStatement(StatementHandler handler, Log statementLog)
+                                                    // 获取JDBC连接
+                                                --> Connection connection = getConnection(statementLog);
+                                                    --> Connection connection = transaction.getConnection();
+                                                        --> JdbcTransaction.getConnection()
+                                                            --> openConnection();
+                                                                --> connection = dataSource.getConnection();
+                                                                    --> PooledDataSource.getConnection()
+                                                                        --> pooledConnection = popConnection("root", "root")
+
+                                                                            --> connection = dataSource.getConnection()
+                                                                                --> UnpooledDataSource.getConnection()
+                                                                                    --> doGetConnection(username, password)
+                                                                                        --> doGetConnection(props) //props 里面存着username和password
+                                                                                            --> initializeDriver();
+                                                                                                    --> if(!registeredDrivers.containsKey(driver))
+                                                                                                    --> driverType = Class.forName(driver, true, driverClassLoader);
+                                                                                                    --> Driver driverInstance = (Driver)driverType.newInstance();
+                                                                                                    --> registeredDrivers.put(driver, driverInstance);
+
+                                                                                            --> Connection connection = DriverManager.getConnection(url, properties);
+                                                                                                    --> com.mysql.jdbc.NonRegisteringDriver.connect(url, properties)
+                                                                                                    --> Connection newConn = com.mysql.jdbc.ConnectionImpl.getInstance(host(props), port(props), props, database(props), url);
+                                                                                                        --> com.mysql.jdbc.ConnectionImpl.getInstance
+                                                                                                            --> JDBC_4_CONNECTION_CTOR = Class.forName("com.mysql.jdbc.JDBC4Connection").getConstructor(new Class[] { String.class, Integer.TYPE, Properties.class, String.class, String.class })
+                                                                                                            --> return (Connection) Util.handleNewInstance(JDBC_4_CONNECTION_CTOR,new Object[] { hostToConnectTo, Integer.valueOf(portToConnectTo), info, databaseToConnectTo, url }
+                                                                                                                    //在这个方法里面进行了一些连接的基本配置，用户名密码，ip端口之类的
+                                                                                                                --> ctor.newInstance(args)
+                                                                                                                    --> initializeDriverProperties(info)
+                                                                                                                        --> initializeProperties(info);
+                                                                                                                        --> this.usePlatformCharsetConverters = getUseJvmCharsetConverters();
+                                                                                                                        .
+                                                                                                                        .
+                                                                                                                        .
+                                                                                                                    --> this.dbmd = getMetaData(false, false);
+                                                                                                                        --> return com.mysql.jdbc.DatabaseMetaData.getInstance(getMultiHostSafeProxy(), this.database, checkForInfoSchema);
+
+                                                                                                                            --> JDBC_4_DBMD_SHOW_CTOR = Class.forName("com.mysql.jdbc.JDBC4DatabaseMetaData").getConstructor(new Class[] { com.mysql.jdbc.MySQLConnection.class, String.class });
+
+                                                                                                                            --> return (DatabaseMetaData) Util.handleNewInstance(JDBC_4_DBMD_SHOW_CTOR, new Object[] { connToSet, databaseToSet }, connToSet.getExceptionInterceptor());
+
+                                                                                                                    --> initializeSafeStatementInterceptors();
+
+                                                                                                                    --> createNewIO(false);
+                                                                                                                        --> Properties mergedProps = exposeAsProperties(this.props);
+                                                                                                                        --> connectOneTryOnly(isForReconnect, mergedProps)
+                                                                                                                            --> coreConnect(mergedProps)
+                                                                                                                                --> int newPort = 3306;
+                                                                                                                                    String newHost = "10.4.249.94";
+                                                                                                                                    this.port = newPort;
+                                                                                                                                    this.host = newHost;
+                                                                                                                                    this.sessionMaxRows = -1;
+                                                                                                                                    this.serverVariables = new HashMap<String, String>();
+                                                                                                                                    this.serverVariables.put("character_set_server", "utf8");
+                                                                                                                                    this.io = new MysqlIO(newHost, newPort, mergedProps, getSocketFactoryClassName(), getProxy(), getSocketTimeout(),this.largeRowSizeThreshold.getValueAsInt());
+                                                                                                                                        --> this.connection = conn
+                                                                                                                                            this.traceProtocol = this.connection.getTraceProtocol()
+                                                                                                                                            this.useAutoSlowLog = this.connection.getAutoSlowLog()
+                                                                                                                                            this.useBufferRowSizeThreshold = useBufferRowSizeThreshold;
+                                                                                                                                            this.useDirectRowUnpack = this.connection.getUseDirectRowUnpack();
+
+                                                                                                                                            this.logSlowQueries = this.connection.getLogSlowQueries();
+
+                                                                                                                                            this.reusablePacket = new Buffer(INITIAL_PACKET_SIZE);
+                                                                                                                                            this.sendPacket = new Buffer(INITIAL_PACKET_SIZE);
+
+                                                                                                                                            this.port = port;
+                                                                                                                                            this.host = host;
+
+                                                                                                                                            this.socketFactoryClassName = socketFactoryClassName; //com.mysql.jdbc.StandardSocketFactory
+                                                                                                                                            this.socketFactory = createSocketFactory();
+                                                                                                                                                --> return (SocketFactory) (Class.forName("com.mysql.jdbc.StandardSocketFactory").newInstance());
+                                                                                                                                            this.exceptionInterceptor = this.connection.getExceptionInterceptor();
+                                                                                                                                            this.mysqlConnection = this.socketFactory.connect(this.host, this.port, props);
+                                                                                                                                                --> com.mysql.jdbc.StandardSocketFactory.connect(host, port, props)
+
+                                                                                                                                                    --> this.rawSocket = createSocket(props);
+                                                                                                                                                        --> return new Socket();
+
+                                                                                                                                                    --> configureSocket(rawSocket, props);
+                                                                                                                                                        --> rawSocket.setTcpNoDelay(Boolean.valueOf(props.getProperty(TCP_NO_DELAY_PROPERTY_NAME, TCP_NO_DELAY_DEFAULT_VALUE)).booleanValue());
+                                                                                                                                                        --> rawSocket.setKeepAlive(Boolean.valueOf(keepAlive).booleanValue());
+                                                                                                                                                        --> rawSocket.setReceiveBufferSize(receiveBufferSize);
+                                                                                                                                                        --> rawSocket.setSendBufferSize(sendBufferSize);
+                                                                                                                                                        --> rawSocket.setTrafficClass(trafficClass);
+
+                                                                                                                                                    --> InetSocketAddress sockAddr = new InetSocketAddress("10.4.249.94", this.port);
+
+                                                                                                                                                    --> this.rawSocket.connect(sockAddr, getRealTimeout(connectTimeout));
+                                                                                                                                                        --> java.net.Socket.connect(java.net.SocketAddress, int)
+                                                                                                                                                            --> SecurityManager security = System.getSecurityManager();
+                                                                                                                                                            --> security.checkConnect(addr.getHostAddress(), port);
+                                                                                                                                                            --> java.net.SocksSocketImpl.connect(SocketAddress endpoint, int timeout)
+                                                                                                                                                                --> uri = new URI("socket://" + ParseUtil.encodePath(host) + ":"+ epoint.getPort());
+                                                                                                                                                                --> java.net.AbstractPlainSocketImpl.connect(java.net.SocketAddress, int timeout)
+                                                                                                                                                                    --> connectToAddress(this.address, port, timeout);
+                                                                                                                                                                        --> doConnect(address, port, timeout);
+                                                                                                                                                                            --> NetHooks.beforeTcpConnect(fd, address, port);
+                                                                                                                                                                            --> socketConnect(address, port, timeout);
+                                                                                                                                                                                --> native void socketConnect(InetAddress address, int port, int timeout) throws IOException;
+                                                                                                                                                    --> return this.rawSocket
+
+                                                                                                                                            this.mysqlConnection = this.socketFactory.beforeHandshake();
+                                                                                                                                            this.mysqlInput = new ReadAheadInputStream(this.mysqlConnection.getInputStream(), 16384, this.connection.getTraceProtocol(),this.connection.getLog());
+                                                                                                                                            this.mysqlOutput = new BufferedOutputStream(this.mysqlConnection.getOutputStream(), 16384);
+
+                                                                                                                                    //这里开始就有认证了
+                                                                                                                                    this.io.doHandshake(this.user, this.password, this.database);
+                                                                                                                                        --> Buffer buf = readPacket();
+                                                                                                                                        --> this.serverVersion = buf.readString("ASCII", getExceptionInterceptor()); // 5.7.26
+                                                                                                                                        --> proceedHandshakeWithPluggableAuthentication(user, password, database, buf);
+                                                                                                                                            --> loadAuthenticationPlugins();
+                                                                                                                                                --> AuthenticationPlugin plugin = new MysqlOldPasswordPlugin();
+                                                                                                                                                    plugin.init(this.connection, this.connection.getProperties());
+
+                                                                                                                                                    plugin = new MysqlNativePasswordPlugin();
+                                                                                                                                                    plugin.init(this.connection, this.connection.getProperties());
+
+                                                                                                                                                    plugin = new MysqlClearPasswordPlugin();
+                                                                                                                                                    plugin.init(this.connection, this.connection.getProperties());
+
+                                                                                                                                                    plugin = new Sha256PasswordPlugin();
+                                                                                                                                                    plugin.init(this.connection, this.connection.getProperties());
+
+                                                                                                                                                    plugin = new CachingSha2PasswordPlugin();
+                                                                                                                                                    plugin.init(this.connection, this.connection.getProperties());
+                                                                                                                                            --> negotiateSSLConnection(user, password, database, packLength);
+                                                                                                                                                --> ExportControlled.transformSocketToSSLSocket(MysqlIO mysqlIO);
+                                                                                                                                                    --> SocketFactory sslFact = new StandardSSLSocketFactory(getSSLSocketFactoryDefaultOrConfigured(mysqlIO), mysqlIO.socketFactory, mysqlIO.mysqlConnection);
+                                                                                                                                                    --> mysqlIO.mysqlConnection = sslFact.connect(mysqlIO.host, mysqlIO.port, null);
+                                                                                                                                                    --> ((SSLSocket) mysqlIO.mysqlConnection).startHandshake();
+                                                                                                                                                    --> mysqlIO.mysqlInput = mysqlIO.mysqlConnection.getInputStream();
+                                                                                                                                                    --> mysqlIO.mysqlOutput = new BufferedOutputStream(mysqlIO.mysqlConnection.getOutputStream(), 16384);
+                                                                                                                                                    --> mysqlIO.socketFactory = sslFact;
+
+                                                                                                                                            --> plugin = getAuthenticationPlugin("mysql_native_password")
+                                                                                                                                            --> plugin.setAuthenticationParameters(user, skipPassword ? null : password);
+                                                                                                                                            --> done = plugin.nextAuthenticationStep(fromServer, toServer); // true
+                                                                                                                                            --> send(last_sent, last_sent.getPosition());
+                                                                                                                                            --> this.mysqlConnection = this.socketFactory.afterHandshake();
+
+
+                                                                                                                            --> initializePropsFromServer();
+                                                                                                                                --> setSessionVariables(); // 好像针对老版本的
+
+                                                                                                                                --> loadServerVariables();
+                                                                                                                                    --> stmt = getMetadataSafeStatement();
+                                                                                                                                        --> com.mysql.jdbc.ConnectionImpl.getMetadataSafeStatement(int maxRows)
+                                                                                                                                            --> java.sql.Statement stmt = createStatement();
+                                                                                                                                                --> StatementImpl stmt = new StatementImpl(getMultiHostSafeProxy(), this.database);
+                                                                                                                                                    stmt.setResultSetType(resultSetType);
+                                                                                                                                                    stmt.setResultSetConcurrency(resultSetConcurrency);
+
+                                                                                                                                                stmt.setMaxRows(maxRows == -1 ? 0 : maxRows);
+                                                                                                                                                stmt.setEscapeProcessing(false);
+                                                                                                                                                return stmt;
+
+                                                                                                                                    --> StringBuilder queryBuf = new StringBuilder(versionComment).append("SELECT");
+                                                                                                                                        queryBuf.append("  @@session.auto_increment_increment AS auto_increment_increment");
+                                                                                                                                        queryBuf.append(", @@character_set_client AS character_set_client");
+                                                                                                                                        queryBuf.append(", @@character_set_connection AS character_set_connection");
+                                                                                                                                        queryBuf.append(", @@character_set_results AS character_set_results");
+                                                                                                                                        queryBuf.append(", @@character_set_server AS character_set_server");
+                                                                                                                                        queryBuf.append(", @@collation_server AS collation_server");
+                                                                                                                                        queryBuf.append(", @@collation_connection AS collation_connection");
+                                                                                                                                        queryBuf.append(", @@init_connect AS init_connect");
+                                                                                                                                        queryBuf.append(", @@interactive_timeout AS interactive_timeout");
+                                                                                                                                        if (!versionMeetsMinimum(5, 5, 0)) {
+                                                                                                                                            queryBuf.append(", @@language AS language");
+                                                                                                                                        }
+                                                                                                                                        queryBuf.append(", @@license AS license");
+                                                                                                                                        queryBuf.append(", @@lower_case_table_names AS lower_case_table_names");
+                                                                                                                                        queryBuf.append(", @@max_allowed_packet AS max_allowed_packet");
+                                                                                                                                        queryBuf.append(", @@net_buffer_length AS net_buffer_length");
+                                                                                                                                        queryBuf.append(", @@net_write_timeout AS net_write_timeout");
+                                                                                                                                        if (!versionMeetsMinimum(8, 0, 3)) {
+                                                                                                                                            queryBuf.append(", @@query_cache_size AS query_cache_size");
+                                                                                                                                            queryBuf.append(", @@query_cache_type AS query_cache_type");
+                                                                                                                                        }
+                                                                                                                                        queryBuf.append(", @@sql_mode AS sql_mode");
+                                                                                                                                        queryBuf.append(", @@system_time_zone AS system_time_zone");
+                                                                                                                                        queryBuf.append(", @@time_zone AS time_zone");
+                                                                                                                                        if (versionMeetsMinimum(8, 0, 3) || (versionMeetsMinimum(5, 7, 20) && !versionMeetsMinimum(8, 0, 0))) {
+                                                                                                                                            queryBuf.append(", @@transaction_isolation AS transaction_isolation");
+                                                                                                                                        } else {
+                                                                                                                                            queryBuf.append(", @@tx_isolation AS transaction_isolation");
+                                                                                                                                        }
+                                                                                                                                        queryBuf.append(", @@wait_timeout AS wait_timeout");
+
+                                                                                                                                        results = stmt.executeQuery(queryBuf.toString());
+
+                                                                                                                                        ResultSetMetaData rsmd = results.getMetaData();
+
+                                                                                                                                        this.serverVariables.put(rsmd.getColumnLabel(i), results.getString(i));
+
+                                                                                                                                --> buildCollationMapping();
+
+                                                                                                                                --> configureTimezone();
+
+                                                                                                                                --> int serverMaxAllowedPacket = getServerVariableAsInt("max_allowed_packet", -1);
+
+                                                                                                                                --> setMaxAllowedPacket(serverMaxAllowedPacket);
+
+                                                                                                                                --> checkTransactionIsolationLevel();
+                                                                                                                                    --> String s = this.serverVariables.get("transaction_isolation") //REPEATABLE-READ
+                                                                                                                                    --> Integer intTI = mapTransIsolationNameToValue.get(s)
+                                                                                                                                    --> this.isolationLevel = intTI.intValue(); //4
+
+                                                                                                                                    //Sets up client character set for MySQL-4.1 and newer if the user This
+                                                                                                                                    //must be done before any further communication with the server!
+                                                                                                                                --> configureClientCharacterSet(false);
+
+                                                                                                                                --> handleAutoCommitDefaults();
+                                                                                                                                    --> resetAutoCommitDefault = true;
+                                                                                                                                    --> setAutoCommit(true)
+
+                                                                                                                                --> defaultMetadataCharset = "UTF-8";
+
+                                                                                                                                --> setupServerForTruncationChecks();
+
+
+                                                                                                                    --> unSafeStatementInterceptors();
+
+                                                                                                    --> return newConn
+
+                                                                                                //配置一下连接，没什么业务逻辑
+                                                                                            --> configureConnection(connection);
+
+                                                                                            --> return connection;
+
+                                                                            --> conn = new PooledConnection(connection, this);
+                                                                                --> this.hashCode = connection.hashCode();
+                                                                                    this.realConnection = connection;
+                                                                                    this.dataSource = dataSource;
+                                                                                    this.createdTimestamp = System.currentTimeMillis();
+                                                                                    this.lastUsedTimestamp = System.currentTimeMillis();
+                                                                                    this.valid = true;
+                                                                                    this.proxyConnection = (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(), IFACES, this);
+
+                                                                            --> state.activeConnections.add(conn);
+                                                                                ~ protected final List<PooledConnection> idleConnections = new ArrayList<>();
+                                                                                ~ protected final List<PooledConnection> activeConnections = new ArrayList<>();
+
+                                                                            --> return conn;
+
+
+                                                                        --> return pooledConnection.getProxyConnection();
+
+                                                                --> connection.setTransactionIsolation(level.getLevel());
+                                                                --> setDesiredAutoCommit(autoCommit);
+
+                                                    --> return ConnectionLogger.newInstance(connection, statementLog, queryStack); // 动态记日志
+                                                        --> InvocationHandler handler = new ConnectionLogger(conn, statementLog, queryStack);
+                                                            ClassLoader cl = Connection.class.getClassLoader();
+                                                            return (Connection) Proxy.newProxyInstance(cl, new Class[]{Connection.class}, handler);
+
+
+                                                    // 调用语句处理器的prepare方法
+                                                --> stmt = handler.prepare(connection, transaction.getTimeout());
+                                                    --> RoutingStatementHandler.prepare(connection, transactionTimeout)
+                                                        --> preparedStatementHandler.prepare(connection, transactionTimeout)
+                                                                // 首先实例化语句，因为PREPARE和非PREPARE不同,所以留给具体子类实现
+                                                                // 不同类型语句的初始化过程不同,比如Statement语句直接调用JDBC java.sql.Connection.createStatement，
+                                                                // 而PrepareStatement则是调用java.sql.Connection.prepareStatement
+                                                            --> statement = instantiateStatement(connection);
+                                                                --> String sql = boundSql.getSql();
+                                                                --> return connection.prepareStatement(sql);
+                                                                    --> PreparedStatement stmt = (PreparedStatement) method.invoke(connection, params);
+                                                                        --> PooledConnection.invoke
+                                                                        --> return method.invoke(realConnection, args);
+                                                                            --> com.mysql.jdbc.ConnectionImpl.prepareStatement(java.lang.String)
+                                                                                --> return prepareStatement(sql, DEFAULT_RESULT_SET_TYPE, DEFAULT_RESULT_SET_CONCURRENCY);
+                                                                                    --> String nativeSql = getProcessEscapeCodesForPrepStmts() ? nativeSQL(sql) : sql; // select id,username,password from user
+
+                                                                                    --> pStmt = (PreparedStatement) clientPrepareStatement(nativeSql, resultSetType, resultSetConcurrency, false);
+                                                                                        --> pStmt = com.mysql.jdbc.PreparedStatement.getInstance(getMultiHostSafeProxy(), nativeSql, this.database);
+
+                                                                                            --> private static final Constructor<?> JDBC_4_PSTMT_3_ARG_CTOR = Class.forName("com.mysql.jdbc.JDBC42PreparedStatement").getConstructor(new Class[] { MySQLConnection.class, String.class, String.class });
+
+                                                                                            --> return (PreparedStatement) Util.handleNewInstance(JDBC_4_PSTMT_3_ARG_CTOR, new Object[] { conn, sql, catalog }, conn.getExceptionInterceptor());
+                                                                                                --> return ctor.newInstance(args);
+                                                                                                    --> PreparedStatement(MySQLConnection conn, String sql, String catalog)
+                                                                                                        --> this.originalSql = sql;
+                                                                                                            this.staticSqlStrings = this.parseInfo.staticSql;
+                                                                                                            this.isLoadDataQuery = this.parseInfo.foundLoadData;
+                                                                                                            this.firstCharOfStmt = this.parseInfo.firstStmtChar;
+
+                                                                                                            this.parameterCount = this.staticSqlStrings.length - 1;
+
+                                                                                                            this.parameterValues = new byte[this.parameterCount][];
+                                                                                                            this.parameterStreams = new InputStream[this.parameterCount];
+                                                                                                            this.isStream = new boolean[this.parameterCount];
+                                                                                                            this.streamLengths = new int[this.parameterCount];
+                                                                                                            this.isNull = new boolean[this.parameterCount];
+                                                                                                            this.parameterTypes = new int[this.parameterCount];
+
+                                                                                        --> pStmt.setResultSetType(resultSetType);
+                                                                                        --> pStmt.setResultSetConcurrency(resultSetConcurrency);
+                                                                                        --> return pStmt
+                                                                                    --> return pStmt
+
+                                                                    --> stmt = PreparedStatementLogger.newInstance(stmt, statementLog, queryStack);
+                                                                        --> InvocationHandler handler = new PreparedStatementLogger(stmt, statementLog, queryStack);
+                                                                        --> return (PreparedStatement) Proxy.newProxyInstance(cl, new Class[]{PreparedStatement.class, CallableStatement.class}, handler);
+
+                                                                    --> return stmt
+
+                                                                // 设置JDBC语句超时时间,注：数据库服务器端也可以设置语句超时时间。mysql通过参数max_statement_time设置,oracle截止12.2c不支持
+                                                            --> setStatementTimeout(statement, transactionTimeout);
+
+                                                                // 设置fetch大小
+                                                                // fetchSize设置每次从服务器端提取的行数,默认不同数据库实现不同,mysql一次性提取全部,oracle默认10。
+                                                                // 正确设置fetchSize可以避免OOM并且对性能有一定的影响,尤其是在网络延时较大的情况下
+                                                            --> setFetchSize(statement);
+
+                                                            --> return statement;
+
+                                                    // 设置参数
+                                                --> handler.parameterize(stmt);
+                                                    --> RoutingStatementHandler.parameterize(stmt)
+                                                        --> preparedStatementHandler.parameterize(stmt)
+
+                                                --> return stmt;
+
+                                        --> return handler.query(stmt, resultHandler)
+                                            --> preparedStatementHandler.query(statement, resultHandler)
+                                                --> PreparedStatement ps = (PreparedStatement) statement;
+                                                --> ps.execute();
+                                                    --> PreparedStatement.execute()
+                                                        --> MySQLConnection locallyScopedConn = this.connection;
+                                                        --> resetCancelledState();
+                                                        --> setupStreamingTimeout(locallyScopedConn)
+                                                            //里面填充了用户名密码等信息
+                                                        --> Buffer sendPacket = fillSendPacket();
+                                                        --> rs = executeInternal(this.maxRows, sendPacket, createStreamingResultSet(), (this.firstCharOfStmt == 'S'), metadataFromCache, false);
+                                                            --> com.mysql.jdbc.PreparedStatement.executeInternal()
+                                                                --> statementBegins()
+                                                                    --> MySQLConnection physicalConn = this.connection.getMultiHostSafeProxy().getActiveMySQLConnection();
+                                                                    --> this.physicalConnection = new WeakReference<MySQLConnection>(physicalConn);
+                                                                --> rs = locallyScopedConnection.execSQL(this, null, maxRowsToRetrieve, sendPacket, this.resultSetType, this.resultSetConcurrency,createStreamingResultSet, this.currentCatalog, metadataFromCache, isBatch);
+                                                                    --> return this.io.sqlQueryDirect(callingStatement, null, null, packet, maxRows, resultSetType, resultSetConcurrency, streamResults, catalog,cachedMetadata);
+                                                                        --> Buffer resultPacket = sendCommand(MysqlDefs.QUERY, null, queryPacket, false, null, 0);
+                                                                            --> checkForOutstandingStreamingData();
+                                                                            --> clearInputStream();
+                                                                            --> send(queryPacket, queryPacket.getPosition()); // packet passed by PreparedStatement
+                                                                                --> Buffer packetToSend = packet;
+                                                                                --> this.mysqlOutput.write(packetToSend.getByteBuffer(), 0, packetLen);
+                                                                                --> this.mysqlOutput.flush();
+
+                                                                            --> Buffer returnPacket = checkErrorPacket(3);
+                                                                                --> resultPacket = reuseAndReadPacket(this.reusablePacket);
+
+                                                                                --> checkErrorPacket(resultPacket);
+
+                                                                                --> return resultPacket;
+
+                                                                            --> return returnPacket;
+
+                                                                        --> ResultSetInternalMethods rs = readAllResults(callingStatement, maxRows, resultSetType, resultSetConcurrency, streamResults, catalog, resultPacket,false, -1L, cachedMetadata);
+                                                                            --> ResultSetImpl topLevelResultSet = readResultsForQueryOrUpdate(callingStatement, maxRows, resultSetType, resultSetConcurrency, streamResults, catalog, resultPacket, isBinaryEncoded, preSentColumnCount, metadataFromCache);
+                                                                                --> com.mysql.jdbc.ResultSetImpl results = getResultSet(callingStatement, columnCount, maxRows, resultSetType, resultSetConcurrency, streamResults, catalog, isBinaryEncoded, metadataFromCache);
+                                                                                        //计算总共有几列
+                                                                                    --> Field[] fields = new Field[(int) columnCount];
+                                                                                    --> Buffer fieldPacket = readPacket()
+                                                                                    --> fields[i] = unpackField(fieldPacket, false)
+                                                                                        //返回的rowData中包含查询出来的数据
+                                                                                    --> RowData rowData = readSingleRowSet(columnCount, maxRows, resultSetConcurrency, isBinaryEncoded, (metadataFromCache == null) ? fields : metadataFromCache);
+                                                                                        --> ArrayList<ResultSetRow> rows = new ArrayList<ResultSetRow>();
+                                                                                        --> ResultSetRow row = nextRow(fields, (int) columnCount, isBinaryEncoded, resultSetConcurrency, false, useBufferRowExplicit, false, null);
+                                                                                            --> return nextRowFast(fields, columnCount, isBinaryEncoded, resultSetConcurrency, useBufferRowIfPossible, useBufferRowExplicit, canReuseRowPacketForBufferRow);
+                                                                                                --> byte[][] rowData = new byte[columnCount][]
+                                                                                                --> return new ByteArrayRow(rowData, getExceptionInterceptor());
+                                                                                                    --> this.exceptionInterceptor = exceptionInterceptor;
+                                                                                                    --> this.internalRowData = internalRowData;
+
+                                                                                            //将查询出来的数据一行一行加到list中
+                                                                                        --> rows.add(row);
+                                                                                        --> rowData = new RowDataStatic(rows);
+                                                                                        --> return rowData;
+
+                                                                                    --> ResultSetImpl rs = buildResultSetWithRows(callingStatement, catalog, (metadataFromCache == null) ? fields : metadataFromCache, rowData, resultSetType, resultSetConcurrency, isBinaryEncoded);
+                                                                                        --> rs = com.mysql.jdbc.ResultSetImpl.getInstance(catalog, fields, rows, this.connection, callingStatement, false);
+                                                                                            --> private static final Constructor<?> JDBC_4_RS_5_ARG_CTOR = JDBC_4_RS_5_ARG_CTOR = Class.forName("com.mysql.jdbc.JDBC42ResultSet") .getConstructor(new Class[] { String.class, Field[].class, RowData.class, MySQLConnection.class, com.mysql.jdbc.StatementImpl.class });
+                                                                                            --> return (ResultSetImpl) Util.handleNewInstance(JDBC_4_RS_5_ARG_CTOR, new Object[] { catalog, fields, tuples, conn, creatorStmt }, conn.getExceptionInterceptor());
+                                                                                                --> this.connection = conn;
+                                                                                                    this.retainOwningStatement = false;
+                                                                                                    if (this.connection != null) {
+                                                                                                        this.exceptionInterceptor = this.connection.getExceptionInterceptor();
+                                                                                                        this.useStrictFloatingPoint = this.connection.getStrictFloatingPoint();
+                                                                                                        this.connectionId = this.connection.getId();
+                                                                                                        this.useFastDateParsing = this.connection.getUseFastDateParsing();
+                                                                                                        this.profileSql = this.connection.getProfileSql();
+                                                                                                        this.retainOwningStatement = this.connection.getRetainStatementAfterResultSetClose();
+                                                                                                        this.jdbcCompliantTruncationForReads = this.connection.getJdbcCompliantTruncationForReads();
+                                                                                                        this.useFastIntParsing = this.connection.getUseFastIntParsing();
+                                                                                                        this.serverTimeZoneTz = this.connection.getServerTimezoneTZ();
+                                                                                                        this.padCharsWithSpace = this.connection.getPadCharsWithSpace();
+                                                                                                    }
+                                                                                                    .
+                                                                                                    .
+                                                                                                    initializeWithMetadata();
+                                                                                                        --> Set<String> tableNamesSet = new HashSet<String>();
+                                                                                                        --> Field f = this.fields[i];
+                                                                                                        --> String tableName = f.getOriginalTableName();
+                                                                                                        --> tableNamesSet.add(tableName);
+                                                                                                        --> this.connection.reportNumberOfTablesAccessed(tableNamesSet.size());
+                                                                                                    setRowPositionValidity();
+
+                                                                                        --> rs.setResultSetType(resultSetType);
+                                                                                        --> rs.setResultSetConcurrency(resultSetConcurrency);
+
+                                                                                    --> return rs;
+
+                                                                                --> return results
+
+                                                                            --> return topLevelResultSet;
+
+                                                                        --> return rs
+                                                                --> return rs
+                                                        --> this.lastInsertId = rs.getUpdateID();
+
+                                                        --> this.results = rs
+
+                                                --> return resultSetHandler.handleResultSets(ps);
+                                                    --> final List<Object> multipleResults = new ArrayList<>();
+
+                                                        // 返回jdbc ResultSet的包装形式,主要是将java.sql.ResultSetMetaData做了Facade模式,便于使用
+                                                    --> ResultSetWrapper rsw = getFirstResultSet(stmt);
+                                                        --> ResultSet rs = stmt.getResultSet();
+                                                        --> return new ResultSetWrapper(rs, configuration)
+                                                            --> this.typeHandlerRegistry = configuration.getTypeHandlerRegistry();
+                                                            --> this.resultSet = rs;
+                                                            --> final int columnCount = metaData.getColumnCount();
+                                                            --> columnNames.add(configuration.isUseColumnLabel() ? metaData.getColumnLabel(i) : metaData.getColumnName(i)); // [id,username,password]
+                                                            --> jdbcTypes.add(JdbcType.forCode(metaData.getColumnType(i))); // [VARCHAR,VARCHAR,VARCHAR]
+                                                            --> classNames.add(metaData.getColumnClassName(i)); // [java.lang.String,java.lang.String,java.lang.String]
+
+                                                        // 绝大部分情况下一个查询只有一个ResultMap, 除非多结果集查询
+                                                        // mappedStatement 绑定了namespace，
+                                                    --> List<ResultMap> resultMaps = mappedStatement.getResultMaps(); //com.liang.UserMapper.baseResult 对象
+
+                                                    --> validateResultMapsCount(rsw, resultMapCount);
+
+                                                    --> ResultMap resultMap = resultMaps.get(resultSetCount);
+
+                                                        // 根据resultMap的定义将resultset打包到应用端的multipleResults中
+                                                        // 因为调用handleResultSet的只有handleResultSets，
+                                                        // 按说其中第一个调用永远不会出现parentMapping==null的情况，
+                                                        // 只有第二个调用才会出现这种情况，而且应该是连续的，
+                                                        // 因为第二个调用就是为了处理嵌套resultMap。
+                                                        // 所以在handleRowValues处理resultMap的时候，一定是主的先处理，嵌套的后处理，
+                                                    --> handleResultSet(rsw, resultMap, multipleResults, null);
+                                                        --> DefaultResultHandler defaultResultHandler = new DefaultResultHandler(objectFactory);
+
+                                                            // 处理主记录，resultHander不为空,rowBounds不使用默认值,parentMapping传递null
+                                                        --> handleRowValues(rsw, resultMap, defaultResultHandler, rowBounds, null);
+                                                            --> handleRowValuesForSimpleResultMap(rsw, resultMap, resultHandler, rowBounds, parentMapping);
+                                                                --> DefaultResultContext<Object> resultContext = new DefaultResultContext<>();
+                                                                --> ResultSet resultSet = rsw.getResultSet();
+
+                                                                    // 解析鉴别器，得到嵌套的最深的鉴别器对应的ResultMap，如果没有鉴别器，就返回最顶层的ResultMap
+                                                                --> ResultMap discriminatedResultMap = resolveDiscriminatedResultMap(resultSet, resultMap, null);
+
+                                                                    // 这个时候resultMap是非常干净的,没有嵌套任何其他东西了，但是这也是最关键的地方，将ResultSet记录转换为业务层配置的对象类型或者Map类型
+                                                                --> Object rowValue = getRowValue(rsw, discriminatedResultMap, null);
+                                                                        /**
+                                                                         * // 有三个createResultObject重载，这三个重载完成的功能从最里面到最外面分别是：
+                                                                         * 1、使用构造器创建目标对象类型;
+                                                                         *    先判断是否有目标对象类型的处理器，有的话，直接调用类型处理器(这里为什么一定是原生类型)创建目标对象
+                                                                         *    如果没有，判断是否有构造器，有的话，使用指定的构造器创建目标对象（构造器里面如果嵌套了查询或者ResultMap，则进行处理）
+                                                                         *    如果结果类型是接口或者具有默认构造器，则使用ObjectFactory创建默认目标对象
+                                                                         *    最后判断是否可以应用自动映射，默认是对非嵌套查询，只要没有明确设置AutoMappingBehavior.NONE就可以，对于嵌套查询，AutoMappingBehavior.FULL就可以。自动映射的逻辑是先找目标对象上具有@AutomapConstructor注解的构造器，然后根据ResultSet返回的字段清单找匹配的构造器，如果找不到，就报错
+                                                                         * 2、如果此时创建的对象不为空，且不需要应用结果对象处理器，判断有没有延迟加载且具有嵌套查询的属性，如果有的话，则为对象创建一个代理，额外存储后面fetch的时候进行延迟加载所需的信息。返回对象。
+                                                                         * 3、如果此时创建的对象不为空，且不需要应用结果对象处理器，如果对象需要自动映射，则先进行自动映射（创建自动映射列表的过程为：先找到在ResultSet、不在ResultMap中的列，如果在目标对象上可以找到属性且可以类型可以处理，则标记为可以自动映射；然后进行自动映射处理，如果遇到无法处理的属性，则根据autoMappingUnknownColumnBehavior进行处理，默认忽略），其次进行属性映射处理
+                                                                         */
+                                                                    --> Object rowValue = createResultObject(rsw, resultMap, lazyLoader, columnPrefix);
+                                                                        --> Object resultObject = createResultObject(rsw, resultMap, constructorArgTypes, constructorArgs, columnPrefix);
+                                                                            --> final Class<?> resultType = resultMap.getType(); // class com.liang.User
+                                                                            --> final MetaClass metaType = MetaClass.forClass(resultType, reflectorFactory);
+                                                                            --> return objectFactory.create(resultType);
+                                                                                --> DefaultObjectFactory.create(java.lang.Class<T>, java.util.List<java.lang.Class<?>>, java.util.List<java.lang.Object>)
+                                                                                    --> Class<?> classToCreate = resolveInterface(type);
+                                                                                        --> if (type == List.class || type == Collection.class || type == Iterable.class) {
+                                                                                              classToCreate = ArrayList.class;
+                                                                                            } else if (type == Map.class) {
+                                                                                              classToCreate = HashMap.class;
+                                                                                            } else if (type == SortedSet.class) { // issue #510 Collections Support
+                                                                                              classToCreate = TreeSet.class;
+                                                                                            } else if (type == Set.class) {
+                                                                                              classToCreate = HashSet.class;
+                                                                                            } else {
+                                                                                              classToCreate = type;
+                                                                                            }
+
+                                                                                    --> return (T) instantiateClass(classToCreate, constructorArgTypes, constructorArgs);
+                                                                                        --> return constructor.newInstance(); // public com.liang.User()
+
+                                                                        --> return resultObject;
+
+                                                                        //里面包含originalObject 和objectWrapper 等信息,把rowValue进行了封装
+                                                                    --> final MetaObject metaObject = configuration.newMetaObject(rowValue);
+
+                                                                    --> foundValues = applyAutomaticMappings(rsw, resultMap, metaObject, columnPrefix) || false;
+                                                                        --> boolean foundValues = false;
+
+                                                                        --> List<UnMappedColumnAutoMapping> autoMapping = createAutomaticMappings(rsw, resultMap, metaObject, columnPrefix);
+                                                                            --> final String mapKey = resultMap.getId() + ":" + columnPrefix; //com.liang.UserMapper.baseResult:null
+                                                                            --> List<UnMappedColumnAutoMapping> autoMapping = autoMappingsCache.get(mapKey);
+                                                                            --> autoMappingsCache.put(mapKey, autoMapping);
+                                                                            --> return autoMapping;
+
+                                                                        --> return !autoMapping.isEmpty() || foundValues;
+
+                                                                        // 处理属性映射,这里会识别出哪些属性需要nestQuery，哪些是nest ResultMap
+                                                                    --> foundValues = applyPropertyMappings(rsw, resultMap, metaObject, lazyLoader, columnPrefix) || foundValues;
+                                                                        --> final List<String> mappedColumnNames = rsw.getMappedColumnNames(resultMap, columnPrefix); //[ID,USERNAME,PASSWORD]
+                                                                        --> boolean foundValues = false;
+                                                                        --> final List<ResultMapping> propertyMappings = resultMap.getPropertyResultMappings();
+                                                                        --> String column = prependPrefix(propertyMapping.getColumn(), columnPrefix);
+                                                                        --> Object value = getPropertyMappingValue(rsw.getResultSet(), metaObject, propertyMapping, lazyLoader, columnPrefix);
+                                                                            --> final TypeHandler<?> typeHandler = propertyMapping.getTypeHandler(); //class java.lang.String
+                                                                            --> final String column = prependPrefix(propertyMapping.getColumn(), columnPrefix); //id
+                                                                            --> return typeHandler.getResult(rs, column);
+                                                                                --> return rs.getString(columnName)
+
+                                                                        --> final String property = propertyMapping.getProperty();
+
+                                                                        --> foundValues = true;
+
+                                                                        --> metaObject.setValue(property, value)
+
+                                                                        --> return foundValues
+
+                                                                    --> foundValues = lazyLoader.size() > 0 || foundValues;
+
+                                                                    --> rowValue = foundValues || configuration.isReturnInstanceForEmptyRow() ? rowValue : null;
+
+                                                                    --> return rowValue
+
+                                                                --> storeObject(resultHandler, resultContext, rowValue, parentMapping, resultSet);
+                                                                        // 否则让ResultHander(默认是DefaultResultHander处理,直接添加到List<Object>中)
+                                                                    --> callResultHandler(resultHandler, resultContext, rowValue);
+                                                                        --> ((ResultHandler<Object>) resultHandler).handleResult(resultContext);
+                                                                            --> List<Object> list = new ArrayList<>();
+                                                                            --> list.add(rowValue);
+
+                                                            //将结果集添加到multipleResults中
+                                                        --> multipleResults.add(defaultResultHandler.getResultList());
+
+                                                        // 循环直到处理完所有的结果集，一般情况下，一个execute只会返回一个结果集,除非语句比如存储过程返回多个resultSet
+                                                    --> rsw = getNextResultSet(stmt);
+
+                                                    --> return collapseSingleResultList(multipleResults);
+                                                        --> return multipleResults.size() == 1 ? (List<Object>) multipleResults.get(0) : multipleResults;
+
+                                    --> localCache.removeObject(key); // 1322964187:1136138037:com.liang.UserMapper.getUsers:0:2147483647:select id,username,password from user:development
+
+                                    --> localCache.putObject(key, list);
+
+                                    --> return list;
+
+
+    --> UserMapper userMapper = sqlSession.getMapper(UserMapper.class);
+
+    --> User user = userMapper.getUserById("fdsafe2f2f2f2");
 
     --> sqlSession.close();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
