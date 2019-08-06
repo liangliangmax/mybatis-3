@@ -6,7 +6,9 @@ import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.ibatis.session.SqlSessionFactoryBuilder;
 
 import java.io.Reader;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class Application {
 
@@ -28,7 +30,10 @@ public class Application {
 
         UserMapper userMapper = sqlSession.getMapper(UserMapper.class);
 
-        System.out.println(userMapper.getUserById("fdsafe2f2f2f2"));
+        Map map = new HashMap<>();
+        map.put("id","fdsafe2f2f2f2");
+        map.put("flag","true");
+        System.out.println(userMapper.getUserById(map));
       }catch (Exception e1){
         e1.printStackTrace();
       }finally {

@@ -14,7 +14,14 @@
         select id,username,password from user
     </select>
 
-  <select id="getUserById" parameterType="String" resultType="com.liang.User">
-        select id,username,password from user where id = #{id}
+  <select id="getUserById" parameterType="java.util.HashMap" resultType="com.liang.User">
+          select id,username,password from user where 1=1
+        <if test='flag == "true"'>
+           and id = #{id}
+        </if>
+        <if test='flag != "true"'>
+            and id is not null
+        </if>
+
     </select>
 </mapper>
