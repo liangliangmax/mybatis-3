@@ -1388,8 +1388,245 @@ Application.main
 
 
     --> UserMapper userMapper = sqlSession.getMapper(UserMapper.class);
+        --> DefaultSqlSession.getMapper(interface com.liang.UserMapper)
+            --> Configuration.getMapper(interface com.liang.UserMapper, DefaultSqlSession sqlSession)
+                --> MapperRegistry.getMapper(interface com.liang.UserMapper,DefaultSqlSession sqlSession)
+                    --> final MapperProxyFactory<T> mapperProxyFactory = (MapperProxyFactory<T>) knownMappers.get(interface com.liang.UserMapper);
+                    --> return mapperProxyFactory.newInstance(sqlSession);
+                        --> MapperProxyFactory.newInstance(sqlSession)
+                            --> final MapperProxy<T> mapperProxy = new MapperProxy<>(sqlSession, mapperInterface, methodCache);
+                                --> this.sqlSession = sqlSession;
+                                    this.mapperInterface = mapperInterface;
+                                    this.methodCache = methodCache;
 
-    --> User user = userMapper.getUserById("fdsafe2f2f2f2");
+                            --> return newInstance(mapperProxy);
+                                --> return (T) Proxy.newProxyInstance(mapperInterface.getClassLoader(), new Class[] { mapperInterface }, mapperProxy);
+
+
+    --> Map map = new HashMap<>();
+        map.put("id","fdsafe2f2f2f2");
+        map.put("flag","true");
+        List<User> users = userMapper.getUserById(map);
+            --> mapperProxy.invoke(Object proxy, Method method, Object[] args)
+                --> final MapperMethod mapperMethod = cachedMapperMethod(method);
+                    --> method = public abstract java.util.List com.liang.UserMapper.getUserById(java.util.Map)
+                    --> value = new MapperMethod(mapperInterface, method, sqlSession.getConfiguration())
+                        --> this.command = new SqlCommand(config, mapperInterface, method);
+                            --> final String methodName = method.getName(); // getUserById
+                            --> final Class<?> declaringClass = method.getDeclaringClass(); // interface com.liang.UserMapper
+
+                            --> MappedStatement ms = resolveMappedStatement(mapperInterface, methodName, declaringClass,configuration);
+                                --> String statementId = mapperInterface.getName() + "." + methodName; // com.liang.UserMapper.getUserById
+                                --> return configuration.getMappedStatement(statementId)
+                                    --> return configuration.getMappedStatement(id, true);
+                                        --> buildAllStatements();
+                                            --> parsePendingResultMaps()
+                                                --> incompleteResultMaps.isEmpty() //将incompleteResultMaps中未初始化的进行初始化，如果都初始化完成了，就直接返回
+
+                                        --> return mappedStatements.get(id);
+                            --> this.name = ms.getId(); // com.liang.UserMapper.getUserById
+                                this.type = ms.getSqlCommandType(); // SELECT
+
+                        --> this.method = new MethodSignature(config, mapperInterface, method);
+                            --> Type resolvedReturnType = TypeParameterResolver.resolveReturnType(method, mapperInterface);
+                                --> Type returnType = method.getGenericReturnType();  // java.util.List<com.liang.User>
+
+                                --> Class<?> declaringClass = method.getDeclaringClass(); // interface com.liang.UserMapper
+
+                                --> return resolveType(returnType, srcType, declaringClass);
+                                    --> return resolveParameterizedType((ParameterizedType) type, srcType, declaringClass);
+                                        --> Class<?> rawType = (Class<?>) parameterizedType.getRawType(); // interface java.util.List
+                                        --> Type[] typeArgs = parameterizedType.getActualTypeArguments(); // class com.liang.User
+                                        --> return new ParameterizedTypeImpl(rawType, null, args)
+                                            --> this.rawType = rawType;
+                                                this.ownerType = ownerType;
+                                                this.actualTypeArguments = actualTypeArguments;
+
+                            --> this.returnType = (Class<?>) ((ParameterizedType) resolvedReturnType).getRawType();
+
+                            --> this.returnsVoid = void.class.equals(this.returnType); //false
+
+                            --> this.returnsMany = configuration.getObjectFactory().isCollection(this.returnType) || this.returnType.isArray(); // true
+
+                            --> this.returnsCursor = Cursor.class.equals(this.returnType); // false
+
+                            --> this.returnsOptional = Optional.class.equals(this.returnType); // false
+
+                            --> this.mapKey = getMapKey(method);    // null
+
+                            --> this.returnsMap = this.mapKey != null; // false
+
+                            --> this.rowBoundsIndex = getUniqueParamIndex(method, RowBounds.class); // null
+                                --> final Class<?>[] argTypes = method.getParameterTypes(); // interface java.util.Map
+
+                            --> this.resultHandlerIndex = getUniqueParamIndex(method, ResultHandler.class); // null
+                                --> final Class<?>[] argTypes = method.getParameterTypes(); // interface java.util.Map
+
+                            --> this.paramNameResolver = new ParamNameResolver(configuration, method);
+                                --> final Class<?>[] paramTypes = method.getParameterTypes(); // interface java.util.Map
+                                --> final SortedMap<Integer, String> map = new TreeMap<>();
+                                --> String name = getActualParamName(method, paramIndex);  // name = arg0, paramIndex = 0
+                                    --> return ParamNameUtil.getParamNames(method).get(paramIndex);
+                                        --> return getParameterNames(method);
+                                            --> return Arrays.stream(method.getParameters()).map(Parameter::getName).collect(Collectors.toList()); //["arg0"]
+                                --> map.put(paramIndex, name) // paramIndex = 0 , name = arg0
+
+                                --> SortedMap<Integer, String> names = Collections.unmodifiableSortedMap(map);
+
+
+                    --> return methodCache.computeIfAbsent(method,value);
+
+                --> return mapperMethod.execute(sqlSession, args); // args = HashMap
+                    --> switch (this.command.getType())
+                    --> case UPDATE|INSERT|DELETE:
+                        --> TODO
+                    --> case SELECT:
+                        --> Object result = executeForMany(sqlSession, args)
+                            --> Object param = method.convertArgsToSqlCommandParam(args);   //param = HashMap
+                                --> return paramNameResolver.getNamedParams(args);
+                                    --> final int paramCount = names.size();
+                                    --> return args[names.firstKey()]
+
+                            --> result = sqlSession.selectList("com.liang.UserMapper.getUserById", param);
+                                --> return this.selectList("com.liang.UserMapper.getUserById", parameter, RowBounds.DEFAULT);
+                                    --> MappedStatement ms = configuration.getMappedStatement(statement);
+                                    --> Object parameter = wrapCollection(parameter) //此处parameter是hashMap，不是collection
+                                        --> if object instanceof Collection
+                                            --> StrictMap<Object> map = new StrictMap<>();
+                                                map.put("collection", object);
+                                                if (object instanceof List) {
+                                                  map.put("list", object);
+                                                }
+                                        --> if object.getClass().isArray()
+                                            --> StrictMap<Object> map = new StrictMap<>();
+                                                map.put("array", object);
+
+                                    --> return executor.query(ms, parameter, rowBounds, Executor.NO_RESULT_HANDLER);
+                                        --> CachingExecutor.query(MappedStatement ms, Object parameterObject, RowBounds rowBounds, ResultHandler resultHandler)
+                                            --> BoundSql boundSql = ms.getBoundSql(parameterObject);
+                                                --> BoundSql boundSql = sqlSource.getBoundSql(parameterObject);
+                                                    --> DynamicSqlSource.getBoundSql(Object parameterObject)
+                                                        --> DynamicContext context = new DynamicContext(configuration, parameterObject);
+                                                            --> private final ContextMap bindings = new ContextMap(null, false);
+                                                                --> this.parameterMetaObject = parameterMetaObject;
+                                                                    this.fallbackParameterObject = fallbackParameterObject;
+                                                            --> bindings.put(PARAMETER_OBJECT_KEY, parameterObject);  // key = _parameter; value = hashMap
+                                                                bindings.put(DATABASE_ID_KEY, configuration.getDatabaseId()); // key = _databaseId; value = null
+
+                                                        --> rootSqlNode.apply(context);
+                                                            --> List<SqlNode> contents
+                                                            --> contents.forEach(node -> node.apply(context));
+                                                                --> StaticTextSqlNode.apply(context)
+                                                                    --> context.appendSql(text); //text = select id,username,password from user where 1=1
+                                                                        --> stringBuilder.append(text)
+
+                                                                --> IfSqlNode.apply(context) // 在会判断所有的if节点是否为真，如果为真，则把包含的sql语句进行拼接
+                                                                    --> if (evaluator.evaluateBoolean(test, context.getBindings())) //test: flag == "true"
+                                                                        --> ExpressionEvaluator.evaluateBoolean // 布尔表达式解析，对于返回值为数字的if表达式,0为假，非0为真
+                                                                            --> Object value = OgnlCache.getValue(expression, parameterObject); //true 会通过ognl进行解析，然后得到是否为真的结果
+                                                                                --> Map context = Ognl.createDefaultContext(root, MEMBER_ACCESS, CLASS_RESOLVER, null);
+                                                                                --> return Ognl.getValue(parseExpression(expression), context, root); //expression: flag == "true"
+                                                                                    --> Object node = expressionCache.get(expression);
+                                                                                    --> node = Ognl.parseExpression(expression);
+                                                                                    --> expressionCache.put(expression, node);
+                                                                                    --> return node;
+                                                                            --> return (Boolean) value;
+                                                                    --> contents.apply(context)
+                                                                        --> StaticTextSqlNode.apply(context)
+                                                                            --> context.appendSql(text); //text: and id = #{id}
+                                                                                --> stringBuilder.append(text)
+                                                                    .
+                                                                    .
+                                                                    .
+
+                                                        --> SqlSourceBuilder sqlSourceParser = new SqlSourceBuilder(configuration);
+                                                            --> this.configuration = configuration;
+                                                                this.typeAliasRegistry = this.configuration.getTypeAliasRegistry();
+                                                                this.typeHandlerRegistry = this.configuration.getTypeHandlerRegistry();
+
+                                                        --> Class<?> parameterType = parameterObject == null ? Object.class : parameterObject.getClass() // class java.util.HashMap
+
+                                                        --> SqlSource sqlSource = sqlSourceParser.parse(context.getSql(), parameterType, context.getBindings());
+                                                            --> ParameterMappingTokenHandler handler = new ParameterMappingTokenHandler(configuration, parameterType, additionalParameters);
+                                                                --> this.parameterType = parameterType;
+                                                                --> this.metaParameters = configuration.newMetaObject(additionalParameters);
+                                                                    --> return MetaObject.forObject(additionalParameters, objectFactory, objectWrapperFactory, reflectorFactory);
+                                                                        --> return new MetaObject(object, objectFactory, objectWrapperFactory, reflectorFactory);
+                                                                            --> this.originalObject = object;
+                                                                                this.objectFactory = objectFactory;
+                                                                                this.objectWrapperFactory = objectWrapperFactory;
+                                                                                this.reflectorFactory = reflectorFactory;
+                                                                                this.objectWrapper = new MapWrapper(metaObject, (Map) object);
+                                                                                    --> this.metaObject = metaObject;
+                                                                                    --> this.map = map;
+
+                                                            --> GenericTokenParser parser = new GenericTokenParser("#{", "}", handler);
+                                                                --> this.openToken = openToken;
+                                                                    this.closeToken = closeToken;
+                                                                    this.handler = handler;
+
+                                                            --> String sql = parser.parse(originalSql); // originalSql: select id,username,password from user where 1=1 and id = #{id}; sql: select id,username,password from user where 1=1 and id = ?
+                                                                --> StringBuilder builder = new StringBuilder();
+                                                                --> builder.append("select id,username,password from user where 1=1 and id = ");
+                                                                --> builder.append(handler.handleToken(expression.toString())); // expression = id
+                                                                    --> ParameterMappingTokenHandler.handleToken("id")
+                                                                        --> (List<ParameterMapping>) parameterMappings.add(buildParameterMapping(content));
+                                                                            --> Map<String, String> propertiesMap = parseParameterMapping(content); // key = property; value = id
+                                                                            --> Class<?> propertyType = Object.class;
+                                                                            --> ParameterMapping.Builder builder = new ParameterMapping.Builder(configuration, property, propertyType);
+                                                                            --> for (Map.Entry<String, String> entry : propertiesMap.entrySet())
+                                                                            --> if ("property".equals(name))   // name = property
+                                                                                // Do Nothing
+
+                                                                            --> return builder.build()
+                                                                                --> resolveTypeHandler();
+                                                                                    --> parameterMapping.typeHandler = typeHandlerRegistry.getTypeHandler("class java.lang.Object", null);
+                                                                                --> validate()
+                                                                                --> parameterMapping
+
+                                                                        --> return "?"
+
+                                                            --> return new StaticSqlSource(configuration, sql, handler.getParameterMappings());
+                                                                --> this.sql = sql;
+                                                                    this.parameterMappings = parameterMappings;
+                                                                    this.configuration = configuration;
+
+                                                        --> BoundSql boundSql = sqlSource.getBoundSql(parameterObject); // parameterObject = {flag:true,id:"fdsafe2f2f2f2"}
+                                                            --> return new BoundSql(configuration, sql, parameterMappings, parameterObject);
+                                                                --> this.sql = sql;
+                                                                    this.parameterMappings = parameterMappings;
+                                                                    this.parameterObject = parameterObject;
+                                                                    this.additionalParameters = new HashMap<>();
+                                                                    this.metaParameters = configuration.newMetaObject(additionalParameters);
+
+                                                        --> return boundSql;
+
+                                                --> List<ParameterMapping> parameterMappings = boundSql.getParameterMappings();
+
+                                                --> for (ParameterMapping pm : boundSql.getParameterMappings())
+
+                                                --> String rmId = pm.getResultMapId(); // null
+
+                                                --> return boundSql;
+
+
+                                            --> CacheKey key = createCacheKey(ms, parameterObject, rowBounds, boundSql);
+                                                --> simpleExecutor.createCacheKey(ms, parameterObject, rowBounds, boundSql)
+                                                        // 根据映射语句id,分页信息,jdbc规范化的预编译sql,所有映射参数的值以及环境id的值,计算出缓存Key
+                                                    --> CacheKey cacheKey = new CacheKey();  //-851223079:264257259:com.liang.UserMapper.getUserById:0:2147483647:select id,username,password from user where 1=1 and id = ?
+                                                        cacheKey.update(ms.getId());
+                                                        cacheKey.update(rowBounds.getOffset());
+                                                        cacheKey.update(rowBounds.getLimit());
+                                                        cacheKey.update(boundSql.getSql());
+
+                                            --> return query(ms, parameterObject, rowBounds, resultHandler, key, boundSql);
+
+                                                .
+                                                .
+                                                .
+                                                //剩下的过程和查询列表的过程是差不多的，参看之前的分析过程
+
+                            --> return result
 
     --> sqlSession.close();
 
