@@ -1479,7 +1479,7 @@ Application.main
                 --> return mapperMethod.execute(sqlSession, args); // args = HashMap
                     --> switch (this.command.getType())
                     --> case UPDATE|INSERT|DELETE:
-                        --> TODO
+                        --> 参见下面插入的例子
                     --> case SELECT:
                         --> Object result = executeForMany(sqlSession, args)
                             --> Object param = method.convertArgsToSqlCommandParam(args);   //param = HashMap
@@ -1627,6 +1627,182 @@ Application.main
                                                 //剩下的过程和查询列表的过程是差不多的，参看之前的分析过程
 
                             --> return result
+
+    --> User user = new User();
+        user.setId("1321ffaf22f3f35454");
+        user.setUsername("ahahah");
+        user.setPassword("ahahahha");
+
+        userMapper.addUser(user);
+            --> mapperProxy.invoke(Object proxy, Method method, Object[] args)
+                --> final MapperMethod mapperMethod = cachedMapperMethod(method); // method= public abstract void com.liang.UserMapper.addUser(com.liang.User)
+                    --> return methodCache.computeIfAbsent(method, k -> new MapperMethod(mapperInterface, method, sqlSession.getConfiguration()));
+                        --> this.command = new SqlCommand(config, mapperInterface, method);
+                            this.method = new MethodSignature(config, mapperInterface, method);
+                            .
+                            .
+                            .
+                            //过程和查询的一样，区别是
+                            this.name = ms.getId(); // com.liang.UserMapper.addUser
+                            this.type = ms.getSqlCommandType(); // INSERT
+                            this.returnType = void
+
+                --> return mapperMethod.execute(sqlSession, args);
+                    --> MapperMethod.execute(SqlSession sqlSession, Object[] args)
+                        --> switch (command.getType())
+                        --> case SELECT: // 上面有分析过程，一样
+                        --> case INSERT|UPDATE|DELETE :
+                            --> Object param = method.convertArgsToSqlCommandParam(args); //args = User{id='1321ffaf22f3f35454', username='ahahah', password='ahahahha'}
+                                --> return paramNameResolver.getNamedParams(args); // return User{id='1321ffaf22f3f35454', username='ahahah', password='ahahahha'}
+
+                            --> int num = sqlSession.insert("com.liang.UserMapper.addUser", param)
+                                --> return update(statement, parameter);
+                                    --> MappedStatement ms = configuration.getMappedStatement("com.liang.UserMapper.addUser");
+                                        --> return mappedStatements.get(id);
+
+                                    --> Object param = wrapCollection(parameter)
+                                        --> return parameter  //User{id='1321ffaf22f3f35454', username='ahahah', password='ahahahha'}
+
+                                    --> return executor.update(ms, param);
+                                        --> CachingExecutor.update(MappedStatement ms, Object parameterObject)
+                                            --> flushCacheIfRequired(ms);
+                                                --> Cache cache = ms.getCache();
+                                                --> TransactionalCacheManager.clear(cache)
+
+                                            --> return simpleExecutor.update(ms, parameterObject);
+                                                --> clearLocalCache();
+                                                    --> PerpetualCache localCache.clear()
+                                                    --> PerpetualCache localOutputParameterCache.clear();
+
+                                                --> return doUpdate(ms, parameter);
+                                                    --> Configuration configuration = ms.getConfiguration();
+
+                                                    --> StatementHandler handler = configuration.newStatementHandler(this, ms, parameter, RowBounds.DEFAULT, null, null);
+                                                        --> StatementHandler statementHandler = new RoutingStatementHandler(executor, mappedStatement, parameterObject, rowBounds, resultHandler, boundSql);
+                                                            --> switch (ms.getStatementType())
+                                                            --> case PREPARED:
+                                                                --> StatementHandler handler = new PreparedStatementHandler(executor, ms, parameter, rowBounds, resultHandler, boundSql);
+                                                                    --> this.configuration = mappedStatement.getConfiguration();
+                                                                        this.executor = executor;
+                                                                        this.mappedStatement = mappedStatement;
+                                                                        this.rowBounds = rowBounds;
+                                                                        this.typeHandlerRegistry = configuration.getTypeHandlerRegistry();
+                                                                        this.objectFactory = configuration.getObjectFactory();
+
+                                                                        generateKeys(parameterObject);
+                                                                            --> KeyGenerator keyGenerator = mappedStatement.getKeyGenerator();
+
+                                                                            --> keyGenerator.processBefore(executor, mappedStatement, null, parameter); // before key generator 主要用于oracle等使用序列机制的ID生成方式
+
+                                                                        boundSql = mappedStatement.getBoundSql(parameterObject);
+                                                                            --> BoundSql boundSql = sqlSource.getBoundSql(parameterObject);
+                                                                                --> return new BoundSql(configuration, sql, parameterMappings, parameterObject); //sql=insert into user (id,username,password) values (?,?,?); parameterMappings 中放置三个属性的list; parameterObject = User{id='1321ffaf22f3f35454', username='ahahah', password='ahahahha'}
+                                                                            --> String rmId = pm.getResultMapId(); // 这里取的是resultMap 的id，因为是插入，没有resultMap，所以rmId是空的
+
+                                                                            --> return boundSql;
+
+                                                                        this.boundSql = boundSql;
+                                                                        this.parameterHandler = configuration.newParameterHandler(mappedStatement, parameterObject, boundSql);
+                                                                            --> ParameterHandler parameterHandler = mappedStatement.getLang().createParameterHandler(mappedStatement, parameterObject, boundSql);
+                                                                            --> parameterHandler = (ParameterHandler) interceptorChain.pluginAll(parameterHandler); // 为参数添加插件
+
+                                                                            --> return parameterHandler;
+
+                                                                        this.resultSetHandler = configuration.newResultSetHandler(executor, mappedStatement, rowBounds, parameterHandler, resultHandler, boundSql);
+
+                                                                --> return handler
+
+                                                        --> statementHandler = (StatementHandler) interceptorChain.pluginAll(statementHandler); // 为statementHandler添加插件
+
+                                                        --> return statementHandler;
+
+                                                    --> Statement stmt = prepareStatement(handler, ms.getStatementLog());
+                                                        --> simpleExecutor.prepareStatement(StatementHandler handler, Log statementLog)
+                                                            --> Connection connection = getConnection(statementLog); // 获取JDBC连接
+                                                                .
+                                                                .
+                                                                //和之前获取连接的方式相同
+
+                                                            --> stmt = handler.prepare(connection, transaction.getTimeout()); // 调用语句处理器的prepare方法
+                                                                --> return preparedStatementHandler.prepare(connection, transactionTimeout);
+                                                                        // 首先实例化语句，因为PREPARE和非PREPARE不同,所以留给具体子类实现
+                                                                        // 不同类型语句的初始化过程不同,比如Statement语句直接调用JDBC java.sql.Connection.createStatement，
+                                                                        // 而PrepareStatement则是调用java.sql.Connection.prepareStatement
+                                                                    --> Statement statement = instantiateStatement(connection);
+                                                                        --> String sql = boundSql.getSql();
+                                                                        --> return connection.prepareStatement(sql);
+
+                                                                    --> setStatementTimeout(statement, transactionTimeout); // 设置JDBC语句超时时间,注：数据库服务器端也可以设置语句超时时间。mysql通过参数max_statement_time设置,oracle截止12.2c不支持
+                                                                        // 设置fetch大小
+                                                                        // fetchSize设置每次从服务器端提取的行数,默认不同数据库实现不同,mysql一次性提取全部,oracle默认10。
+                                                                        // 正确设置fetchSize可以避免OOM并且对性能有一定的影响,尤其是在网络延时较大的情况下
+                                                                    --> setFetchSize(statement);
+
+                                                                    --> return statement;
+
+                                                            --> handler.parameterize(stmt); // 设置参数
+                                                                --> preparedStatementHandler.parameterize(statement)
+                                                                    --> parameterHandler.setParameters((PreparedStatement) statement);
+                                                                        --> List<ParameterMapping> parameterMappings = boundSql.getParameterMappings();
+
+                                                                        --> ParameterMapping parameterMapping = parameterMappings.get(i);
+
+                                                                        --> if (parameterMapping.getMode() != ParameterMode.OUT) //判断参数是输入还是输出
+
+                                                                        --> String propertyName = parameterMapping.getProperty();
+
+                                                                            // 计算参数值的优先级是 先判断是不是属于语句的AdditionalParameter；
+                                                                            // 其次参数是不是null；然后判断是不是属于注册类型；
+                                                                            // 都不是，那估计参数一定是object或者map了,这就要借助于MetaObject获取属性值了；
+                                                                        --> MetaObject metaObject = configuration.newMetaObject(parameterObject);
+
+                                                                        --> value = metaObject.getValue("id"); // value = 1321ffaf22f3f35454
+
+                                                                        --> typeHandler.setParameter(ps, i + 1, value, jdbcType);
+                                                                            --> setNonNullParameter(ps, i, parameter, jdbcType);
+                                                                                --> ps.setString(i, parameter); // parameter = 1321ffaf22f3f35454
+
+                                                            --> return stmt;
+
+                                                    --> return handler.update(stmt);
+                                                        --> return preparedStatementHandler.update(statement);
+                                                            --> PreparedStatement ps = (PreparedStatement) statement;
+                                                            --> ps.execute();
+                                                                --> return method.invoke(statement, params);
+                                                                    --> preparedStatement.execute()
+                                                                        .
+                                                                        .
+                                                                        //执行的过程和之前是一样的
+
+                                                            --> int rows = ps.getUpdateCount();
+
+                                                            --> Object parameterObject = boundSql.getParameterObject();  // parameterObject = User{id='1321ffaf22f3f35454', username='ahahah', password='ahahahha'}
+
+                                                            --> KeyGenerator keyGenerator = mappedStatement.getKeyGenerator();
+                                                            --> keyGenerator.processAfter(executor, mappedStatement, ps, parameterObject); // after key generator 主要用于mysql等使用自增机制的ID生成方式
+                                                                --> Do Nothing
+                                                            --> return rows; // 1
+
+                            --> result = rowCountResult(num);
+                                --> return num
+
+                            --> return result;
+
+
+    --> sqlSession.commit();
+        --> DefaultSqlSession.commit(boolean)
+            --> isCommit = isCommitOrRollbackRequired(force)
+                --> return (!autoCommit && dirty) || force; //true
+            --> executor.commit(isCommit);
+                --> simpleExectore.commit(true)
+                    --> flushStatements();
+                    --> transaction.commit();
+                        --> JdbcTransaction.commit
+                            --> connection.commit();
+                --> tcm.commit();
+                    --> txCache.commit();
+                        --> flushPendingEntries();
+                            reset();
 
     --> sqlSession.close();
 

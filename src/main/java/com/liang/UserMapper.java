@@ -9,4 +9,6 @@ public interface UserMapper {
   List<User> getUsers();
 
   List<User> getUserById(Map param);
+
+  int addUser(User user);
 }

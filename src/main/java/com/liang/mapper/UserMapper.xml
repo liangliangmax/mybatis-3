@@ -24,4 +24,8 @@
         </if>
 
     </select>
+
+  <insert id="addUser" parameterType="com.liang.User">
+    insert into user (id,username,password) values (#{id},#{username},#{password})
+  </insert>
 </mapper>

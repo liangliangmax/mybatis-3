@@ -34,6 +34,17 @@ public class Application {
         map.put("id","fdsafe2f2f2f2");
         map.put("flag","true");
         System.out.println(userMapper.getUserById(map));
+
+
+        User user = new User();
+        user.setId("1321ffaf22f3f35454");
+        user.setUsername("ahahah");
+        user.setPassword("ahahahha");
+        int i = userMapper.addUser(user);
+        System.out.println(i);
+
+        sqlSession.commit();
+
       }catch (Exception e1){
         e1.printStackTrace();
       }finally {
