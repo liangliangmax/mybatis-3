@@ -360,6 +360,8 @@ Application.main
                                                                */
                                                             --> return builder.parseScriptNode()
                                                                 --> MixedSqlNode rootSqlNode = parseDynamicTags(context);
+                                                                    --> XNode child = node.newXNode(children.item(i)); //<#text>insert into user (id,username,password) values (#{id},#{username},#{password})</#text>
+
                                                                     --> String data = child.getStringBody(""); //select id,username,password from user where id = #{id}
                                                                     --> TextSqlNode textSqlNode = new TextSqlNode(data);
                                                                     --> if textSqlNode.isDynamic() // 判断文本节点中是否包含了${}，如果包含则为动态文本节点，否则为静态文本节点(包括#{})，静态文本节点在运行时不需要二次处理
